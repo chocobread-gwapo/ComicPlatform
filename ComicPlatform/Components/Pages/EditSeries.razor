@@ -1,0 +1,498 @@
+@page "/creator/series/{SeriesId:int}/edit"
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Hosting
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@using ComicPlatform.Data
+@using ComicPlatform.Models
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@inject ApplicationDbContext Db
+@inject AuthenticationStateProvider AuthProvider
+@inject UserManager<ApplicationUser> UserManager
+@inject IWebHostEnvironment Env
+@inject NavigationManager Nav
+
+<PageTitle>Edit @(_series?.Title ?? "Series")</PageTitle>
+
+<HeadContent>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+</HeadContent>
+
+<div class="edit-series">
+    @if (!_loaded)
+    {
+        <p class="loading">Loading...</p>
+    }
+    else if (_series is null)
+    {
+        <p class="loading">You don't have permission to edit this series (or it doesn't exist).</p>
+    }
+    else
+    {
+        <h1>Edit @_series.Title</h1>
+
+        <EditForm Model="_model" OnValidSubmit="HandleSubmit" FormName="EditSeriesForm">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+
+            <div class="field">
+                <label>Title</label>
+                <InputText @bind-Value="_model.Title" />
+            </div>
+
+            <div class="field">
+                <label>Synopsis</label>
+                <InputTextArea @bind-Value="_model.Synopsis" rows="4" />
+            </div>
+
+            <div class="field">
+                <label>Status</label>
+                <InputSelect @bind-Value="_model.Status">
+                    <option value="@SeriesStatus.Ongoing">Ongoing</option>
+                    <option value="@SeriesStatus.Completed">Completed</option>
+                    <option value="@SeriesStatus.Hiatus">Hiatus</option>
+                </InputSelect>
+            </div>
+
+            <div class="field">
+                <label>Genres</label>
+                <div class="genre-checkboxes">
+                    @foreach (var genre in _allGenres)
+                    {
+                        <label class="genre-checkbox">
+                            <input type="checkbox"
+                                   checked="@_selectedGenreIds.Contains(genre.Id)"
+                                   @onchange="@((e) => ToggleGenre(genre.Id, (bool)e.Value!))" />
+                            @genre.Name
+                        </label>
+                    }
+                </div>
+            </div>
+
+            <div class="field">
+                <label>Cover Image (30 MB max)</label>
+                @{
+                    var previewUrl = _newCoverUrl ?? _series.CoverImageUrl;
+                }
+                @if (!string.IsNullOrEmpty(previewUrl))
+                {
+                    <img class="cover-preview" src="@previewUrl" alt="Cover preview" />
+                }
+                <InputFile OnChange="OnCoverFileSelected" accept="image/*" />
+                @if (_uploadError is not null)
+                {
+                    <p class="upload-error">@_uploadError</p>
+                }
+            </div>
+
+            <button type="submit">Save Changes</button>
+        </EditForm>
+
+        <div class="authors-section">
+            <label>Co-Authors</label>
+
+            @if (_authors.Count == 0)
+            {
+                <p class="no-authors">No co-authors yet — just you.</p>
+            }
+            else
+            {
+                @foreach (var author in _authors)
+                {
+                    <div class="author-row">
+                        <span>@author.DisplayName (@author.Email)</span>
+                        @if (_isCreator)
+                        {
+                            <button type="button" class="remove-author" @onclick="() => RemoveAuthor(author.UserId)">Remove</button>
+                        }
+                    </div>
+                }
+            }
+
+            @if (_isCreator)
+            {
+                <div class="add-author-row">
+                    <input type="email" placeholder="Add co-author by email" @bind="_newAuthorEmail" @bind:event="oninput" />
+                    <button type="button" @onclick="AddAuthor">Add</button>
+                </div>
+
+                @if (_addAuthorError is not null)
+                {
+                    <p class="upload-error">@_addAuthorError</p>
+                }
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .edit-series {
+        font-family: 'Public Sans', sans-serif;
+        background: var(--paper);
+        color: var(--ink);
+        min-height: 100vh;
+        padding: 2.5rem 2rem 4rem;
+    }
+
+    .loading {
+        max-width: 600px;
+        margin: 0 auto;
+        font-family: 'Fraunces', serif;
+        font-size: 1.1rem;
+    }
+
+    h1 {
+        max-width: 600px;
+        margin: 0 auto 1.5rem;
+        font-family: 'Fraunces', serif;
+        font-weight: 900;
+        font-size: clamp(1.75rem, 4vw, 2.25rem);
+    }
+
+    form, .authors-section {
+        max-width: 600px;
+        margin: 0 auto;
+    }
+
+    .field {
+        margin-bottom: 1.25rem;
+    }
+
+    .field label {
+        display: block;
+        margin-bottom: 0.35rem;
+        font-weight: 600;
+    }
+
+    .field input[type="text"], .field textarea, .field select {
+        width: 100%;
+        padding: 0.6rem;
+        border: 1.5px solid var(--ink);
+        font-family: 'Public Sans', sans-serif;
+        background: var(--panel-bg);
+        color: var(--ink);
+        box-sizing: border-box;
+    }
+
+    .genre-checkboxes {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .genre-checkbox {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        border: 1.5px solid var(--ink);
+        padding: 0.3rem 0.7rem;
+        cursor: pointer;
+        font-size: 0.9rem;
+        font-weight: normal;
+    }
+
+    .cover-preview {
+        display: block;
+        width: 180px;
+        aspect-ratio: 3 / 4;
+        object-fit: cover;
+        border: 3px solid var(--ink);
+        margin-bottom: 0.75rem;
+    }
+
+    .upload-error {
+        color: var(--danger);
+        font-size: 0.9rem;
+        margin-top: 0.4rem;
+    }
+
+    button[type="submit"] {
+        background: var(--ink);
+        color: var(--paper);
+        border: 3px solid var(--ink);
+        padding: 0.65rem 1.5rem;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    button[type="submit"]:hover {
+        background: var(--accent);
+        border-color: var(--accent);
+    }
+
+    .authors-section {
+        margin-top: 2.5rem;
+        padding-top: 1.5rem;
+        border-top: 3px solid var(--ink);
+    }
+
+    .authors-section label {
+        display: block;
+        margin-bottom: 0.5rem;
+        font-weight: 600;
+    }
+
+    .no-authors {
+        opacity: 0.7;
+        font-size: 0.95rem;
+    }
+
+    .author-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.5rem 0;
+        border-bottom: 1.5px solid var(--border-soft);
+    }
+
+    .remove-author {
+        background: none;
+        border: none;
+        color: var(--danger);
+        text-decoration: underline;
+        cursor: pointer;
+        font-size: 0.85rem;
+    }
+
+    .add-author-row {
+        display: flex;
+        gap: 0.5rem;
+        margin-top: 0.75rem;
+    }
+
+    .add-author-row input {
+        flex: 1;
+        padding: 0.5rem;
+        border: 1.5px solid var(--ink);
+        background: var(--panel-bg);
+        color: var(--ink);
+    }
+
+    .add-author-row button {
+        border: 1.5px solid var(--ink);
+        background: var(--panel-bg);
+        color: var(--ink);
+        padding: 0.5rem 1rem;
+        cursor: pointer;
+    }
+
+    .add-author-row button:hover {
+        background: var(--paper);
+    }
+</style>
+
+@code {
+    private const long MaxCoverSizeBytes = 30 * 1024 * 1024;
+
+    [Parameter] public int SeriesId { get; set; }
+
+    private Series? _series;
+    private bool _loaded;
+    private string? _currentUserId;
+    private bool _isCreator;
+    private string? _newCoverUrl;
+    private string? _uploadError;
+    private readonly SeriesFormModel _model = new();
+    private List<Genre> _allGenres = new();
+    private HashSet<int> _selectedGenreIds = new();
+    private List<AuthorDisplay> _authors = new();
+    private string _newAuthorEmail = string.Empty;
+    private string? _addAuthorError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        _currentUserId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        _allGenres = await Db.Genres.OrderBy(g => g.Name).ToListAsync();
+
+        var series = await Db.Series
+            .Include(s => s.Genres)
+            .FirstOrDefaultAsync(s => s.Id == SeriesId);
+
+        if (series is not null)
+        {
+            _isCreator = series.CreatorId == _currentUserId;
+            var isCoAuthor = await Db.SeriesAuthors.AnyAsync(sa => sa.SeriesId == SeriesId && sa.UserId == _currentUserId);
+
+            if (_isCreator || isCoAuthor)
+            {
+                _series = series;
+                _model.Title = series.Title;
+                _model.Synopsis = series.Synopsis;
+                _model.Status = series.Status;
+                _selectedGenreIds = series.Genres.Select(g => g.Id).ToHashSet();
+
+                var seriesAuthors = await Db.SeriesAuthors
+                    .Include(sa => sa.User)
+                    .Where(sa => sa.SeriesId == SeriesId)
+                    .ToListAsync();
+
+                _authors = seriesAuthors.Select(sa => new AuthorDisplay
+                {
+                    UserId = sa.UserId,
+                    DisplayName = sa.User.DisplayName,
+                    Email = sa.User.Email ?? ""
+                }).ToList();
+            }
+        }
+
+        _loaded = true;
+    }
+
+    private async Task AddAuthor()
+    {
+        if (_series is null || string.IsNullOrWhiteSpace(_newAuthorEmail))
+        {
+            return;
+        }
+
+        var user = await UserManager.FindByEmailAsync(_newAuthorEmail.Trim());
+
+        if (user is null)
+        {
+            _addAuthorError = "No account found with that email.";
+            return;
+        }
+
+        if (user.Id == _series.CreatorId || _authors.Any(a => a.UserId == user.Id))
+        {
+            _addAuthorError = "That person is already an author on this series.";
+            return;
+        }
+
+        Db.SeriesAuthors.Add(new SeriesAuthor
+        {
+            SeriesId = _series.Id,
+            UserId = user.Id
+        });
+
+        await Db.SaveChangesAsync();
+
+        _authors.Add(new AuthorDisplay
+        {
+            UserId = user.Id,
+            DisplayName = user.DisplayName,
+            Email = user.Email ?? ""
+        });
+
+        _newAuthorEmail = string.Empty;
+        _addAuthorError = null;
+    }
+
+    private async Task RemoveAuthor(string userId)
+    {
+        if (_series is null)
+        {
+            return;
+        }
+
+        var seriesAuthor = await Db.SeriesAuthors.FindAsync(_series.Id, userId);
+        if (seriesAuthor is not null)
+        {
+            Db.SeriesAuthors.Remove(seriesAuthor);
+            await Db.SaveChangesAsync();
+        }
+
+        _authors.RemoveAll(a => a.UserId == userId);
+    }
+
+    private void ToggleGenre(int genreId, bool isSelected)
+    {
+        if (isSelected)
+        {
+            _selectedGenreIds.Add(genreId);
+        }
+        else
+        {
+            _selectedGenreIds.Remove(genreId);
+        }
+    }
+
+    private async Task OnCoverFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+
+        if (file.Size > MaxCoverSizeBytes)
+        {
+            _uploadError = $"{file.Name} is {file.Size / (1024.0 * 1024.0):F1} MB — the limit is 30 MB.";
+            return;
+        }
+
+        try
+        {
+            var uploadsFolder = Path.Combine(Env.WebRootPath, "uploads", "covers");
+            Directory.CreateDirectory(uploadsFolder);
+
+            var fileName = $"{Guid.NewGuid()}{Path.GetExtension(file.Name)}";
+            var filePath = Path.Combine(uploadsFolder, fileName);
+
+            await using var stream = file.OpenReadStream(maxAllowedSize: MaxCoverSizeBytes);
+            await using var fileStream = new FileStream(filePath, FileMode.Create);
+            await stream.CopyToAsync(fileStream);
+
+            _newCoverUrl = $"/uploads/covers/{fileName}";
+            _uploadError = null;
+        }
+        catch (Exception)
+        {
+            _uploadError = $"{file.Name} failed to upload — try again.";
+        }
+    }
+
+    private async Task HandleSubmit()
+    {
+        if (_series is null)
+        {
+            return;
+        }
+
+        _series.Title = _model.Title;
+        _series.Synopsis = _model.Synopsis;
+        _series.Status = _model.Status;
+        _series.UpdatedAt = DateTime.UtcNow;
+
+        if (_newCoverUrl is not null)
+        {
+            _series.CoverImageUrl = _newCoverUrl;
+        }
+
+        var selectedGenres = await Db.Genres
+            .Where(g => _selectedGenreIds.Contains(g.Id))
+            .ToListAsync();
+
+        _series.Genres.Clear();
+        foreach (var genre in selectedGenres)
+        {
+            _series.Genres.Add(genre);
+        }
+
+        await Db.SaveChangesAsync();
+
+        Nav.NavigateTo($"/series/{SeriesId}");
+    }
+
+    private class SeriesFormModel
+    {
+        [Required, MaxLength(200)]
+        public string Title { get; set; } = string.Empty;
+
+        public string Synopsis { get; set; } = string.Empty;
+
+        public SeriesStatus Status { get; set; } = SeriesStatus.Ongoing;
+    }
+
+    private class AuthorDisplay
+    {
+        public string UserId { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+    }
+}

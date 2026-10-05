@@ -1,0 +1,266 @@
+@page "/"
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.EntityFrameworkCore
+@using ComicPlatform.Data
+@using ComicPlatform.Models
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+
+<PageTitle>Catkoom — Read something new</PageTitle>
+
+<HeadContent>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+</HeadContent>
+
+<div class="home">
+    @if (!_loaded)
+    {
+        <p class="note">Loading...</p>
+    }
+    else if (_all.Count == 0)
+    {
+        <div class="note">
+            <p>Nothing published yet.</p>
+            <a href="/creator/new-series">Start a series</a>
+        </div>
+    }
+    else
+    {
+        <input type="search" class="search" placeholder="Search by title..." @oninput="OnSearch" />
+
+        @if (!string.IsNullOrWhiteSpace(_query))
+        {
+            var hits = _all.Where(s => s.Title.Contains(_query, StringComparison.OrdinalIgnoreCase)).ToList();
+            <section>
+                <h2>Results</h2>
+                @if (hits.Count == 0) { <p class="note">No series match your search.</p> }
+                <div class="wrap">
+                    @foreach (var s in hits)
+                    {
+                        <a class="card" href="/series/@s.Id">@CoverOf((s, false))<div class="title">@s.Title</div></a>
+                    }
+                </div>
+            </section>
+        }
+        else
+        {
+            <section>
+                <h2>Trending &amp; Popular Series</h2>
+                <div class="pills">
+                    <button class='pill @(_rankTab == "trending" ? "on" : "")' @onclick='() => _rankTab = "trending"'>Trending</button>
+                    <button class='pill @(_rankTab == "popular" ? "on" : "")' @onclick='() => _rankTab = "popular"'>Popular</button>
+                </div>
+                <div class="row">
+                    @{ var rank = 1; }
+                    @foreach (var s in RankedList.Take(10))
+                    {
+                        <a class="card" href="/series/@s.Id">
+                            @CoverOf((s, false))
+                            <span class="rank">@rank</span>
+                            <div class="title">@s.Title</div>
+                            <div class="sub">@s.Genres.FirstOrDefault()</div>
+                        </a>
+                        rank++;
+                    }
+                </div>
+            </section>
+
+            <a class="banner" href="/creator/my-series">
+                <strong>Have a story to tell?</strong> Publish your own series on Catkoom.
+            </a>
+
+            <section>
+                <h2>Popular Series by Category</h2>
+                <div class="pills">
+                    @foreach (var g in _genres)
+                    {
+                        <button class='pill @(g == _genreTab ? "on" : "")' @onclick="() => _genreTab = g">@g</button>
+                    }
+                </div>
+                <div class="row six">
+                    @foreach (var s in _all.Where(x => x.Genres.Contains(_genreTab)).OrderByDescending(x => x.Views).Take(12))
+                    {
+                        <a class="card" href="/series/@s.Id">
+                            @CoverOf((s, false))
+                            <div class="title">@s.Title</div>
+                            <div class="sub">@s.Views.ToString("N0") Views</div>
+                        </a>
+                    }
+                </div>
+            </section>
+
+            <section>
+                <h2>Newly Released</h2>
+                <div class="row">
+                    @foreach (var s in _all.OrderByDescending(x => x.FirstPublished).Take(10))
+                    {
+                        <a class="card" href="/series/@s.Id">@CoverOf((s, false))<div class="title">@s.Title</div></a>
+                    }
+                </div>
+            </section>
+
+            <section>
+                <h2>Daily</h2>
+                <div class="pills">
+                    @foreach (var d in _days)
+                    {
+                        <button class='pill @(d == _dayTab ? "on" : "")' @onclick="() => _dayTab = d">@d</button>
+                    }
+                    <button class="pill @(_dayTab == "Completed" ? "on" : "")" @onclick='() => _dayTab = "Completed"'>Completed</button>
+                </div>
+                <div class="grid6">
+                    @foreach (var s in DailyList)
+                    {
+                        <a class="card" href="/series/@s.Id">
+                            @CoverOf((s, true))
+                            <div class="sub top">@s.Genres.FirstOrDefault()</div>
+                            <div class="title">@s.Title</div>
+                            <div class="likes">@s.Likes.ToString("N0")</div>
+                        </a>
+                    }
+                </div>
+                @if (!DailyList.Any()) { <p class="note">Nothing here yet.</p> }
+            </section>
+
+            <section>
+                <h2>More stories from creators</h2>
+                <div class="row six">
+                    @foreach (var s in _all.OrderBy(x => x.Views).Take(12))
+                    {
+                        <a class="card" href="/series/@s.Id">
+                            @CoverOf((s, true))
+                            <div class="title">@s.Title</div>
+                            <div class="sub">@s.Genres.FirstOrDefault()</div>
+                        </a>
+                    }
+                </div>
+            </section>
+        }
+    }
+</div>
+
+<style>
+    .home { max-width: 960px; margin: 0 auto; padding: 1.5rem 0 3rem; font-family: 'Public Sans', sans-serif; color: var(--ink); }
+    .home section { margin-bottom: 2.5rem; }
+    .home h2 { font-family: 'Fraunces', serif; font-weight: 600; font-size: 1.3rem; margin: 0 0 0.75rem; }
+    .note { font-family: 'Fraunces', serif; font-size: 1.05rem; }
+    .note a { color: var(--accent); font-weight: 600; text-decoration: underline; }
+
+    .search { width: 100%; max-width: 400px; margin-bottom: 1.75rem; padding: 0.6rem 0.85rem; box-sizing: border-box;
+        border: 1.5px solid var(--ink); background: var(--panel-bg); color: var(--ink); font: inherit; }
+    .search::placeholder { color: var(--muted-text); }
+    .search:focus { outline: 3px solid var(--accent); outline-offset: 1px; }
+
+    .pills { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
+    .pill { border: 1.5px solid var(--ink); background: transparent; color: var(--ink); padding: 0.35rem 0.85rem;
+        font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+    .pill:hover { background: var(--panel-bg); }
+    .pill.on { background: var(--ink); color: var(--paper); }
+    .pill:focus-visible, .card:focus-visible, .banner:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+    .row { display: grid; grid-auto-flow: column; grid-auto-columns: calc((100% - 4 * 1rem) / 5); gap: 1rem;
+        overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 0.5rem; scrollbar-width: thin; }
+    .row.six { grid-auto-columns: calc((100% - 5 * 1rem) / 6); }
+    .wrap { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1.25rem 1rem; }
+
+    .card { display: block; min-width: 0; scroll-snap-align: start; text-decoration: none; color: var(--ink); }
+    .card:hover .title { text-decoration: underline; }
+    .cover { position: relative; aspect-ratio: 3 / 4; overflow: hidden; border: 3px solid var(--ink); background: var(--paper); }
+    .cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .cover-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; text-align: center;
+        padding: 0.75rem; font-family: 'Fraunces', serif; font-weight: 600;
+        background: repeating-linear-gradient(135deg, var(--paper), var(--paper) 10px, var(--hatch) 10px, var(--hatch) 11px); }
+    .title { margin-top: 0.4rem; font-size: 0.9rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sub { font-size: 0.75rem; color: var(--muted-text); }
+
+    .rank { display: block; position: relative; margin: -2.3rem 0 0 0.3rem; pointer-events: none;
+        font-family: 'Fraunces', serif; font-weight: 900; font-size: 3.4rem; line-height: 1;
+        color: var(--ink); -webkit-text-stroke: 4px var(--paper); paint-order: stroke fill; }
+
+    .grid6 { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 1.5rem 1rem; }
+    .sub.top { margin-top: 0.4rem; }
+    .sub.top + .title { margin-top: 0; }
+    .likes { font-size: 0.75rem; color: var(--muted-text); }
+    .likes::before { content: "\2665\00a0"; color: var(--accent); }
+
+    .new { position: absolute; left: 0; top: 0; padding: 0.15rem 0.45rem; font-size: 0.65rem; font-weight: 700;
+        background: var(--ink); color: var(--paper); }
+
+    .banner { display: block; margin-bottom: 2.5rem; padding: 1.1rem 1.25rem; text-align: center; text-decoration: none;
+        border: 3px solid var(--ink); background: var(--ink); color: var(--paper); }
+    .banner:hover { text-decoration: underline; }
+
+    @@media (max-width: 720px) {
+        .row, .row.six { grid-auto-columns: 40%; }
+        .grid6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+</style>
+
+@code {
+    private sealed record Card(int Id, string Title, string? Cover, List<string> Genres, bool Completed,
+        int Views, int Likes, DateTime? FirstPublished, DateTime? LastPublished);
+
+    private static readonly string[] _days = { "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" };
+
+    private List<Card> _all = new();
+    private List<string> _genres = new();
+    private string _rankTab = "trending";
+    private string _genreTab = "";
+    private string _dayTab = DateTime.UtcNow.ToString("ddd");
+    private string _query = "";
+    private bool _loaded;
+
+    private IEnumerable<Card> RankedList => _rankTab == "popular"
+        ? _all.OrderByDescending(s => s.Views)
+        : _all.Where(s => s.LastPublished > DateTime.UtcNow.AddDays(-30)).OrderByDescending(s => s.Views);
+
+    private IEnumerable<Card> DailyList => _dayTab == "Completed"
+        ? _all.Where(s => s.Completed)
+        : _all.Where(s => !s.Completed && s.LastPublished?.ToString("ddd") == _dayTab);
+
+    private RenderFragment<(Card S, bool Badge)> CoverOf = x => @<div class="cover">
+        @if (!string.IsNullOrEmpty(x.S.Cover))
+        {
+            <img src="@x.S.Cover" alt="@x.S.Title" loading="lazy" />
+        }
+        else
+        {
+            <div class="cover-placeholder">@x.S.Title</div>
+        }
+        @if (x.Badge && x.S.LastPublished > DateTime.UtcNow.AddDays(-2))
+        {
+            <span class="new">New Episode</span>
+        }
+    </div>;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var now = DateTime.UtcNow;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var rows = await db.Series
+            .Where(s => s.Chapters.Any(c => !c.IsDraft && c.PublishedAt <= now))
+            .Select(s => new
+            {
+                s.Id,
+                s.Title,
+                s.CoverImageUrl,
+                Genres = s.Genres.Select(g => g.Name).ToList(),
+                Completed = s.Status == SeriesStatus.Completed,
+                Views = s.Chapters.Sum(c => c.ViewCount),
+                Likes = db.Likes.Count(l => l.Chapter.SeriesId == s.Id),
+                First = s.Chapters.Where(c => !c.IsDraft && c.PublishedAt <= now).Min(c => c.PublishedAt),
+                Last = s.Chapters.Where(c => !c.IsDraft && c.PublishedAt <= now).Max(c => c.PublishedAt)
+            })
+            .ToListAsync();
+
+        _all = rows.Select(r => new Card(r.Id, r.Title, r.CoverImageUrl, r.Genres, r.Completed, r.Views, r.Likes, r.First, r.Last)).ToList();
+        _genres = _all.SelectMany(s => s.Genres).Distinct().OrderBy(g => g).ToList();
+        _genreTab = _genres.FirstOrDefault() ?? "";
+        _loaded = true;
+    }
+
+    private void OnSearch(ChangeEventArgs e) => _query = e.Value?.ToString() ?? "";
+}

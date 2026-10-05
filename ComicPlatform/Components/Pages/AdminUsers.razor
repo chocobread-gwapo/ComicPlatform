@@ -1,0 +1,208 @@
+@page "/admin/users"
+@attribute [Authorize(Roles = "Admin")]
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@using ComicPlatform.Data
+@using System.Security.Claims
+@inject ApplicationDbContext Db
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthProvider
+
+<PageTitle>Users - Admin</PageTitle>
+
+<HeadContent>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+</HeadContent>
+
+<div class="admin">
+    <header class="admin-header">
+        <h1>Users</h1>
+        <a class="back-link" href="/admin">&laquo; Series moderation</a>
+    </header>
+
+    @if (_users is null)
+    {
+        <p class="loading">Loading...</p>
+    }
+    else
+    {
+        <input type="search" class="search" placeholder="Search by name or email..." @oninput="OnSearch" />
+
+        @if (!Filtered.Any())
+        {
+            <p class="loading">No users match.</p>
+        }
+        else
+        {
+            <div class="user-list">
+                @foreach (var u in Filtered)
+                {
+                    <div class="user-row">
+                        <div class="user-main">
+                            <span class="user-name">@u.DisplayName</span>
+                            <span class="user-email">@u.Email</span>
+                            @if (u.IsAdmin)
+                            {
+                                <span class="admin-tag">Admin</span>
+                            }
+                            else if (IsBanned(u))
+                            {
+                                <span class="banned-tag">
+                                    Banned@(u.LockoutEnd == DateTimeOffset.MaxValue ? " permanently" : $" until {u.LockoutEnd:MMM d, yyyy}")
+                                </span>
+                            }
+                            <span class="joined">Joined @u.CreatedAt.ToString("MMM d, yyyy")</span>
+                        </div>
+
+                        <div class="user-actions">
+                            @if (u.IsAdmin || u.Id == _currentUserId)
+                            {
+                                <span class="protected-label">&mdash;</span>
+                            }
+                            else if (_banningUserId == u.Id)
+                            {
+                                <span class="ban-picker">
+                                    <select @bind="_banDuration">
+                                        <option value="1">1 day</option>
+                                        <option value="7">7 days</option>
+                                        <option value="30">30 days</option>
+                                        <option value="permanent">Permanent</option>
+                                    </select>
+                                    <button type="button" class="btn danger" @onclick="() => ConfirmBan(u.Id)">Confirm</button>
+                                    <button type="button" class="btn" @onclick="() => _banningUserId = null">Cancel</button>
+                                </span>
+                            }
+                            else if (IsBanned(u))
+                            {
+                                <button type="button" class="btn" @onclick="() => Unban(u.Id)">Unban</button>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn danger" @onclick="() => _banningUserId = u.Id">Ban</button>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    }
+</div>
+
+<style>
+    .admin { font-family: 'Public Sans', sans-serif; color: var(--ink); max-width: 1000px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+
+    .admin-header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem; padding-bottom: 1rem; border-bottom: 3px solid var(--ink); }
+    .admin-header h1 { font-family: 'Fraunces', serif; font-weight: 900; font-size: clamp(1.5rem, 4vw, 2rem); margin: 0; }
+    .back-link { color: var(--accent); font-weight: 600; font-size: 0.9rem; text-decoration: none; }
+    .back-link:hover { text-decoration: underline; }
+
+    .search { width: 100%; max-width: 320px; margin-bottom: 1.25rem; padding: 0.5rem 0.75rem; border: 1.5px solid var(--ink); background: var(--panel-bg); color: var(--ink); font: inherit; font-size: 0.9rem; box-sizing: border-box; }
+    .search:focus { outline: 3px solid var(--accent); outline-offset: 1px; }
+
+    .user-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; padding: 0.9rem 0.1rem; border-bottom: 1.5px solid var(--border-soft); }
+    .user-row:first-of-type { border-top: 1.5px solid var(--border-soft); }
+
+    .user-main { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+    .user-name { font-family: 'Fraunces', serif; font-weight: 600; font-size: 1.05rem; }
+    .user-email { color: var(--muted-text); font-size: 0.85rem; }
+    .joined { color: var(--muted-text); font-size: 0.8rem; }
+
+    .admin-tag { font-size: 0.7rem; font-weight: 700; border: 1.5px solid var(--ink); padding: 0.1rem 0.5rem; }
+    .banned-tag { font-size: 0.7rem; font-weight: 700; background: var(--danger); color: var(--paper); padding: 0.1rem 0.5rem; }
+
+    .user-actions { display: flex; align-items: center; gap: 0.6rem; }
+    .protected-label { color: var(--muted-text); }
+
+    .btn { font: inherit; font-size: 0.85rem; font-weight: 600; padding: 0.35rem 0.8rem; cursor: pointer; border: 1.5px solid var(--ink); background: transparent; color: var(--ink); }
+    .btn:hover { background: var(--panel-bg); }
+    .btn.danger { border-color: var(--danger); color: var(--danger); }
+    .btn.danger:hover { background: var(--danger); color: var(--paper); }
+    .btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+    .ban-picker { display: flex; align-items: center; gap: 0.5rem; }
+    .ban-picker select { font: inherit; font-size: 0.85rem; padding: 0.3rem 0.4rem; border: 1.5px solid var(--ink); background: var(--panel-bg); color: var(--ink); }
+
+    .loading { font-family: 'Fraunces', serif; font-size: 1.1rem; }
+</style>
+
+@code {
+    private sealed record UserRow(string Id, string DisplayName, string? Email, DateTime CreatedAt, bool IsAdmin, DateTimeOffset? LockoutEnd);
+
+    private List<UserRow>? _users;
+    private string _query = "";
+    private string? _currentUserId;
+    private string? _banningUserId;
+    private string _banDuration = "7";
+
+    private IEnumerable<UserRow> Filtered => (_users ?? Enumerable.Empty<UserRow>())
+        .Where(u => string.IsNullOrWhiteSpace(_query)
+            || u.DisplayName.Contains(_query, StringComparison.OrdinalIgnoreCase)
+            || (u.Email ?? "").Contains(_query, StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsBanned(UserRow u) => u.LockoutEnd.HasValue && u.LockoutEnd > DateTimeOffset.UtcNow;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        _currentUserId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        await Reload();
+    }
+
+    private async Task Reload()
+    {
+        var adminRoleId = await Db.Roles.Where(r => r.Name == "Admin").Select(r => r.Id).FirstOrDefaultAsync();
+        var adminUserIds = adminRoleId is null
+            ? new HashSet<string>()
+            : (await Db.UserRoles.Where(ur => ur.RoleId == adminRoleId).Select(ur => ur.UserId).ToListAsync()).ToHashSet();
+
+        var rows = await Db.Users
+            .OrderByDescending(u => u.CreatedAt)
+            .Select(u => new { u.Id, u.DisplayName, u.Email, u.CreatedAt, u.LockoutEnd })
+            .ToListAsync();
+
+        _users = rows.Select(r => new UserRow(r.Id, r.DisplayName, r.Email, r.CreatedAt, adminUserIds.Contains(r.Id), r.LockoutEnd)).ToList();
+    }
+
+    private void OnSearch(ChangeEventArgs e) => _query = e.Value?.ToString() ?? "";
+
+    private async Task ConfirmBan(string userId)
+    {
+        var user = await UserManager.FindByIdAsync(userId);
+        if (user is null)
+        {
+            return;
+        }
+
+        DateTimeOffset lockoutEnd = _banDuration switch
+        {
+            "1" => DateTimeOffset.UtcNow.AddDays(1),
+            "7" => DateTimeOffset.UtcNow.AddDays(7),
+            "30" => DateTimeOffset.UtcNow.AddDays(30),
+            _ => DateTimeOffset.MaxValue
+        };
+
+        await UserManager.SetLockoutEnabledAsync(user, true);
+        await UserManager.SetLockoutEndDateAsync(user, lockoutEnd);
+
+        _banningUserId = null;
+        await Reload();
+    }
+
+    private async Task Unban(string userId)
+    {
+        var user = await UserManager.FindByIdAsync(userId);
+        if (user is null)
+        {
+            return;
+        }
+
+        await UserManager.SetLockoutEndDateAsync(user, null);
+        await Reload();
+    }
+}

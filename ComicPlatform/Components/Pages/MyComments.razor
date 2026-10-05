@@ -1,0 +1,115 @@
+@page "/my-comments"
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.EntityFrameworkCore
+@using ComicPlatform.Data
+@using ComicPlatform.Components.Shared
+@using System.Security.Claims
+@inject ApplicationDbContext Db
+@inject AuthenticationStateProvider AuthProvider
+
+<PageTitle>Your Comments</PageTitle>
+
+<HeadContent>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+</HeadContent>
+
+<AccountTabs />
+
+<div class="my-comments">
+    <div class="page-head">
+        <h1>Your Comments</h1>
+    </div>
+
+    @if (!_loaded)
+    {
+        <p class="loading">Loading...</p>
+    }
+    else if (_items.Count == 0)
+    {
+        <div class="empty">
+            <p>You haven't commented on anything yet.</p>
+            <a href="/">Browse series</a>
+        </div>
+    }
+    else
+    {
+        <div class="list">
+            @foreach (var item in _items)
+            {
+                <a class="row" href="@($"/read/{item.SeriesId}/{item.ChapterNumber}")">
+                    <div class="context">
+                        <span class="series-title">@item.SeriesTitle</span>
+                        <span class="chapter">Ch. @item.ChapterNumber</span>
+                        <span class="date">@item.CreatedAt.ToString("MMM d, yyyy")</span>
+                    </div>
+                    <p class="content">@item.Content</p>
+                </a>
+            }
+        </div>
+
+        @if (_items.Count >= CapCount)
+        {
+            <p class="cap-note">Showing your most recent @CapCount comments.</p>
+        }
+    }
+</div>
+
+<style>
+    .my-comments { font-family: 'Public Sans', sans-serif; color: var(--ink); max-width: 800px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+
+    .page-head { margin-bottom: 1.25rem; padding-bottom: 1rem; border-bottom: 3px solid var(--ink); }
+    .page-head h1 { font-family: 'Fraunces', serif; font-weight: 900; font-size: clamp(1.5rem, 4vw, 2rem); margin: 0; }
+
+    .list { display: flex; flex-direction: column; }
+    .row { display: block; text-decoration: none; color: var(--ink); padding: 1rem 0.1rem; border-bottom: 1.5px solid var(--border-soft); }
+    .row:first-child { border-top: 1.5px solid var(--border-soft); }
+    .row:hover { background: var(--panel-bg); }
+
+    .context { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.35rem; }
+    .series-title { font-family: 'Fraunces', serif; font-weight: 600; }
+    .chapter, .date { font-size: 0.8rem; color: var(--muted-text); }
+
+    .content { margin: 0; line-height: 1.5; overflow-wrap: break-word; }
+
+    .cap-note { margin-top: 1rem; font-size: 0.8rem; color: var(--muted-text); }
+
+    .empty, .loading { font-family: 'Fraunces', serif; font-size: 1.1rem; }
+    .empty a { display: inline-block; margin-top: 0.75rem; color: var(--accent); font-weight: 600; text-decoration: underline; }
+</style>
+
+@code {
+    private const int CapCount = 100;
+
+    private sealed record CommentItem(int SeriesId, string SeriesTitle, int ChapterNumber, string Content, DateTime CreatedAt);
+
+    private List<CommentItem> _items = new();
+    private bool _loaded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        var userId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        var rows = await Db.Comments
+            .Where(c => c.UserId == userId)
+            .OrderByDescending(c => c.CreatedAt)
+            .Take(CapCount)
+            .Select(c => new
+            {
+                c.Content,
+                c.CreatedAt,
+                c.Chapter.Number,
+                c.Chapter.Series.Id,
+                c.Chapter.Series.Title
+            })
+            .ToListAsync();
+
+        _items = rows.Select(r => new CommentItem(r.Id, r.Title, r.Number, r.Content, r.CreatedAt)).ToList();
+        _loaded = true;
+    }
+}

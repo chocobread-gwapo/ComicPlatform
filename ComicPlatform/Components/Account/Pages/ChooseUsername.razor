@@ -1,0 +1,82 @@
+﻿@page "/Account/ChooseUsername"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@using ComicPlatform.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Choose a Username</PageTitle>
+
+<h1>Choose a username</h1>
+
+<div class="row">
+    <div class="col-lg-6">
+        <StatusMessage Message="@Message" />
+        <p>Pick a username to continue — this is what other readers will see instead of your email.</p>
+        <EditForm Model="Input" method="post" OnValidSubmit="SetUsername" FormName="choose-username">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="text-danger" role="alert" />
+            <div class="form-floating mb-3">
+                <InputText @bind-Value="Input.DisplayName" id="Input.DisplayName" class="form-control" autocomplete="nickname" aria-required="true" placeholder="Username" />
+                <label for="Input.DisplayName">Username</label>
+                <ValidationMessage For="() => Input.DisplayName" class="text-danger" />
+            </div>
+            <button type="submit" class="w-100 btn btn-lg btn-primary">Save and continue</button>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    private string? errorMessage;
+    private string? Message => errorMessage is null ? null : $"Error: {errorMessage}";
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = default!;
+
+    protected override void OnInitialized()
+    {
+        Input ??= new();
+    }
+
+    private async Task SetUsername()
+    {
+        var user = await UserManager.GetUserAsync(HttpContext.User);
+        if (user is null)
+        {
+            RedirectManager.RedirectTo("Account/Login");
+            return;
+        }
+
+        if (await UserManager.Users.AnyAsync(u => u.DisplayName == Input.DisplayName && u.Id != user.Id))
+        {
+            errorMessage = "That username is already taken.";
+            return;
+        }
+
+        user.DisplayName = Input.DisplayName.Trim();
+        await UserManager.UpdateAsync(user);
+
+        // Re-issues the auth cookie through our CustomUserClaimsPrincipalFactory,
+        // so the DisplayName claim is added immediately — no logout/login needed.
+        await SignInManager.RefreshSignInAsync(user);
+
+        RedirectManager.RedirectTo("/");
+    }
+
+    private sealed class InputModel
+    {
+        [Required]
+        [StringLength(30, ErrorMessage = "The {0} must be at least {2} and at max {1} characters long.", MinimumLength = 2)]
+        [Display(Name = "Username")]
+        public string DisplayName { get; set; } = "";
+    }
+}

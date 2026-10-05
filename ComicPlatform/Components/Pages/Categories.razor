@@ -1,0 +1,208 @@
+@page "/categories"
+@using Microsoft.EntityFrameworkCore
+@using ComicPlatform.Data
+@using ComicPlatform.Models
+@inject ApplicationDbContext Db
+
+<PageTitle>Categories - Catkoom</PageTitle>
+
+<HeadContent>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+</HeadContent>
+
+<div class="browse">
+    <div class="page-head">
+        <h1>Categories</h1>
+    </div>
+
+    @if (_genres.Count == 0)
+    {
+        <p class="loading">@(_genresLoaded ? "No genres yet." : "Loading...")</p>
+    }
+    else
+    {
+        <div class="pills genre-pills">
+            @foreach (var g in _genres)
+            {
+                <button class="pill @(_selectedGenres.Contains(g) ? "on" : "")" @onclick="() => ToggleGenre(g)">@g</button>
+            }
+        </div>
+
+        @if (_selectedGenres.Count > 1)
+        {
+            <div class="match-toggle">
+                <span class="match-label">Match:</span>
+                <button class="pill small @(!_matchAll ? "on" : "")" @onclick="() => SetMatchMode(false)">Any selected</button>
+                <button class="pill small @(_matchAll ? "on" : "")" @onclick="() => SetMatchMode(true)">All selected</button>
+            </div>
+        }
+
+        @if (!_loaded)
+        {
+            <p class="loading">Loading...</p>
+        }
+        else if (_selectedGenres.Count == 0)
+        {
+            <p class="empty">Pick at least one genre.</p>
+        }
+        else if (_items.Count == 0)
+        {
+            <p class="empty">No series match this filter.</p>
+        }
+        else
+        {
+            <div class="row-head">
+                <span class="count">@_items.Count series</span>
+                <div class="pills sort">
+                    <button class="pill @(!_sortByNewest ? "on" : "")" @onclick="() => _sortByNewest = false">Popular</button>
+                    <button class="pill @(_sortByNewest ? "on" : "")" @onclick="() => _sortByNewest = true">Newest</button>
+                </div>
+            </div>
+
+            <div class="grid">
+                @foreach (var s in Sorted)
+                {
+                    <a class="panel" href="@($"/series/{s.Id}")">
+                        <div class="cover">
+                            @if (!string.IsNullOrEmpty(s.Cover))
+                            {
+                                <img src="@s.Cover" alt="@s.Title" loading="lazy" />
+                            }
+                            else
+                            {
+                                <div class="cover-placeholder">@s.Title</div>
+                            }
+                        </div>
+                        <div class="panel-info">
+                            <h2>@s.Title</h2>
+                            <span class="sub">@Compact(s.Views) views</span>
+                        </div>
+                    </a>
+                }
+            </div>
+        }
+    }
+</div>
+
+<style>
+    .browse { font-family: 'Public Sans', sans-serif; color: var(--ink); max-width: 960px; margin: 0 auto; padding: 1.5rem 0 4rem; }
+
+    .page-head { margin-bottom: 1.25rem; padding-bottom: 1rem; border-bottom: 3px solid var(--ink); }
+    .page-head h1 { font-family: 'Fraunces', serif; font-weight: 900; font-size: clamp(1.5rem, 4vw, 2rem); margin: 0; }
+
+    .pills { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .genre-pills { margin-bottom: 1.5rem; }
+    .pill { font: inherit; font-size: 0.8rem; font-weight: 600; padding: 0.35rem 0.85rem; cursor: pointer; background: transparent; color: var(--ink); border: 1.5px solid var(--ink); }
+    .pill:hover { background: var(--panel-bg); }
+    .pill.on { background: var(--ink); color: var(--paper); }
+    .pill:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+    .match-toggle { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+    .match-label { font-size: 0.8rem; color: var(--muted-text); }
+    .pill.small { font-size: 0.72rem; padding: 0.25rem 0.65rem; }
+
+    .row-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem; }
+    .count { font-size: 0.85rem; color: var(--muted-text); }
+
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1.5rem 1.25rem; }
+
+    .panel { display: block; text-decoration: none; color: var(--ink); border: 3px solid var(--ink); background: var(--panel-bg); transition: transform 0.15s ease, box-shadow 0.15s ease; }
+    .panel:hover { transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--ink); }
+    .panel:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+    .cover { position: relative; aspect-ratio: 3 / 4; overflow: hidden; border-bottom: 3px solid var(--ink); background: var(--paper); }
+    .cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .cover-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; text-align: center; padding: 1rem; font-family: 'Fraunces', serif; font-weight: 600; font-size: 1.1rem;
+        background: repeating-linear-gradient(135deg, var(--paper), var(--paper) 10px, var(--hatch) 10px, var(--hatch) 11px); }
+
+    .panel-info { padding: 0.75rem 0.85rem 0.9rem; }
+    .panel-info h2 { font-family: 'Fraunces', serif; font-size: 1rem; font-weight: 600; margin: 0 0 0.3rem; line-height: 1.25; }
+    .sub { font-size: 0.78rem; color: var(--muted-text); }
+
+    .empty, .loading { font-family: 'Fraunces', serif; font-size: 1.1rem; }
+</style>
+
+@code {
+    private sealed record Card(int Id, string Title, string? Cover, int Views, DateTime? FirstPublished);
+
+    private List<string> _genres = new();
+    private bool _genresLoaded;
+    private HashSet<string> _selectedGenres = new();
+    private bool _matchAll;
+    private List<Card> _items = new();
+    private bool _sortByNewest;
+    private bool _loaded;
+
+    private IEnumerable<Card> Sorted => _sortByNewest
+        ? _items.OrderByDescending(i => i.FirstPublished)
+        : _items.OrderByDescending(i => i.Views);
+
+    private static string Compact(int n) => n >= 1_000_000 ? $"{n / 1_000_000.0:0.#}M"
+        : n >= 1_000 ? $"{n / 1_000.0:0.#}K"
+        : n.ToString();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _genres = await Db.Genres.OrderBy(g => g.Name).Select(g => g.Name).ToListAsync();
+        _genresLoaded = true;
+
+        if (_genres.Count > 0)
+        {
+            _selectedGenres.Add(_genres[0]);
+            await LoadGenres();
+        }
+    }
+
+    private async Task ToggleGenre(string g)
+    {
+        if (!_selectedGenres.Remove(g))
+        {
+            _selectedGenres.Add(g);
+        }
+
+        await LoadGenres();
+    }
+
+    private async Task SetMatchMode(bool matchAll)
+    {
+        _matchAll = matchAll;
+        await LoadGenres();
+    }
+
+    private async Task LoadGenres()
+    {
+        _loaded = false;
+
+        if (_selectedGenres.Count == 0)
+        {
+            _items = new();
+            _loaded = true;
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        var selected = _selectedGenres.ToList();
+
+        var query = Db.Series.Where(s => s.Chapters.Any(c => !c.IsDraft && c.PublishedAt <= now));
+
+        query = _matchAll
+            ? query.Where(s => s.Genres.Count(g => selected.Contains(g.Name)) == selected.Count)
+            : query.Where(s => s.Genres.Any(g => selected.Contains(g.Name)));
+
+        var rows = await query
+            .Select(s => new
+            {
+                s.Id,
+                s.Title,
+                s.CoverImageUrl,
+                Views = s.Chapters.Sum(c => c.ViewCount),
+                First = s.Chapters.Where(c => !c.IsDraft && c.PublishedAt <= now).Min(c => (DateTime?)c.PublishedAt)
+            })
+            .ToListAsync();
+
+        _items = rows.Select(r => new Card(r.Id, r.Title, r.CoverImageUrl, r.Views, r.First)).ToList();
+        _loaded = true;
+    }
+}

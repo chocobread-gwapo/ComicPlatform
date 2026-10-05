@@ -1,0 +1,202 @@
+@page "/subscriptions"
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.EntityFrameworkCore
+@using ComicPlatform.Data
+@using ComicPlatform.Models
+@using ComicPlatform.Components.Shared
+@using System.Security.Claims
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject AuthenticationStateProvider AuthProvider
+
+<PageTitle>catkoom - Subscriptions</PageTitle>
+
+<HeadContent>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+</HeadContent>
+
+<AccountTabs />
+
+<div class="browse">
+    <div class="page-head">
+        <h1>Subscriptions @if (_items.Count > 0) { <span class="count">@_items.Count series</span> }</h1>
+        @if (_items.Count > 0)
+        {
+            <div class="pills">
+                <button class="pill @(_sortByUpdates ? "on" : "")" @onclick="() => _sortByUpdates = true">Updates</button>
+                <button class="pill @(!_sortByUpdates ? "on" : "")" @onclick="() => _sortByUpdates = false">Recently followed</button>
+            </div>
+        }
+    </div>
+
+    @if (!_loaded)
+    {
+        <p class="loading">Loading...</p>
+    }
+    else if (_items.Count == 0)
+    {
+        <div class="empty">
+            <p>You're not following anything yet.</p>
+            <a href="/">Browse series</a>
+        </div>
+    }
+    else
+    {
+        <div class="list">
+            @foreach (var item in Sorted)
+            {
+                <div class="row">
+                    <a class="row-link" href="@($"/series/{item.Series.Id}")">
+                        <span class="thumb">
+                            @if (!string.IsNullOrEmpty(item.Series.CoverImageUrl))
+                            {
+                                <img src="@item.Series.CoverImageUrl" alt="" loading="lazy" />
+                            }
+                            else
+                            {
+                                <span class="thumb-placeholder">@item.Series.Title</span>
+                            }
+                            @if (item.HasNewChapter)
+                            {
+                                <span class="new">NEW</span>
+                            }
+                        </span>
+                        <span class="meta">
+                            <span class="title">@item.Series.Title</span>
+                            <span class="creator">@item.Series.Creator.DisplayName</span>
+                            <span class="sub">
+                                <span class="status status-@item.Series.Status.ToString().ToLower()">@item.Series.Status</span>
+                                @if (item.LastChapterAt is not null)
+                                {
+                                    <span class="updated">@item.LastChapterAt?.ToString("MMM d, yyyy") Updated</span>
+                                }
+                            </span>
+                        </span>
+                    </a>
+                    <button class="unfollow" @onclick="() => Unfollow(item)">Unfollow</button>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .browse { font-family: 'Public Sans', sans-serif; color: var(--ink); max-width: 1000px; margin: 0 auto; padding: 1.25rem 1rem 4rem; }
+
+    .page-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 3px solid var(--ink); }
+    .page-head h1 { font-family: 'Fraunces', serif; font-weight: 900; font-size: clamp(1.5rem, 4vw, 2rem); margin: 0; display: flex; align-items: baseline; gap: 0.6rem; }
+    .count { font-family: 'Public Sans', sans-serif; font-weight: 600; font-size: 0.9rem; color: var(--muted-text); }
+
+    .pills { display: flex; gap: 0.5rem; }
+    .pill { font: inherit; font-size: 0.8rem; font-weight: 600; padding: 0.35rem 0.85rem; cursor: pointer; background: transparent; color: var(--ink); border: 1.5px solid var(--ink); }
+    .pill:hover { background: var(--panel-bg); }
+    .pill.on { background: var(--ink); color: var(--paper); }
+    .pill:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+    .list { display: flex; flex-direction: column; }
+    .row { display: flex; align-items: center; gap: 0.75rem; border-bottom: 1.5px solid var(--border-soft); }
+    .row:first-child { border-top: 1.5px solid var(--border-soft); }
+    .row:hover { background: var(--panel-bg); }
+
+    .row-link { flex: 1; min-width: 0; display: flex; align-items: center; gap: 1rem; padding: 0.85rem 0.1rem; text-decoration: none; color: var(--ink); }
+
+    .thumb { position: relative; width: 64px; aspect-ratio: 3 / 4; flex-shrink: 0; border: 2px solid var(--ink); background: var(--paper); overflow: hidden; }
+    .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .thumb-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; text-align: center; padding: 0.25rem;
+        font-family: 'Fraunces', serif; font-weight: 600; font-size: 0.65rem; line-height: 1.2;
+        background: repeating-linear-gradient(135deg, var(--paper), var(--paper) 8px, var(--hatch) 8px, var(--hatch) 9px); }
+    .new { position: absolute; left: 0; top: 0; padding: 0.1rem 0.3rem; font-size: 0.55rem; font-weight: 700; background: var(--ink); color: var(--paper); }
+
+    .meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.2rem; }
+    .title { font-family: 'Fraunces', serif; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .creator { font-size: 0.8rem; color: var(--muted-text); }
+    .sub { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.15rem; }
+    .updated { font-size: 0.75rem; color: var(--muted-text); }
+
+    .status { display: inline-block; font-size: 0.65rem; font-weight: 600; padding: 0.1rem 0.4rem; border: 1.5px solid var(--ink); }
+    .status-ongoing { background: var(--ink); color: var(--paper); }
+    .status-hiatus { opacity: 0.55; }
+
+    .unfollow { flex-shrink: 0; font: inherit; font-size: 0.8rem; font-weight: 600; padding: 0.4rem 0.75rem; cursor: pointer;
+        background: transparent; color: var(--muted-text); border: 1.5px solid var(--border-soft); }
+    .unfollow:hover { background: var(--danger); border-color: var(--danger); color: var(--paper); }
+    .unfollow:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+    .empty, .loading { font-family: 'Fraunces', serif; font-size: 1.1rem; }
+    .empty a { display: inline-block; margin-top: 0.75rem; color: var(--accent); font-weight: 600; text-decoration: underline; }
+
+    @@media (max-width: 560px) {
+        .creator { display: none; }
+    }
+</style>
+
+@code {
+    private List<FollowedSeriesItem> _items = new();
+    private bool _loaded;
+    private bool _sortByUpdates = true;
+    private string? _userId;
+
+    private IEnumerable<FollowedSeriesItem> Sorted => _sortByUpdates
+        ? _items.OrderByDescending(i => i.HasNewChapter).ThenByDescending(i => i.LastChapterAt ?? DateTime.MinValue)
+        : _items.OrderByDescending(i => i.FollowedAt);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        _userId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var follows = await db.Follows
+            .Include(f => f.Series).ThenInclude(s => s.Chapters)
+            .Include(f => f.Series).ThenInclude(s => s.Creator)
+            .Where(f => f.UserId == _userId)
+            .ToListAsync();
+
+        _items = follows.Select(f =>
+        {
+            var published = f.Series.Chapters.Where(c => !c.IsDraft && c.PublishedAt <= DateTime.UtcNow).ToList();
+            var lastAt = published.Count > 0 ? published.Max(c => c.PublishedAt) : null;
+            return new FollowedSeriesItem
+            {
+                Series = f.Series,
+                FollowedAt = f.FollowedAt,
+                LastChapterAt = lastAt,
+                HasNewChapter = published.Any(c => c.PublishedAt > (f.LastViewedAt ?? f.FollowedAt))
+            };
+        }).ToList();
+
+        _loaded = true;
+    }
+
+    private async Task Unfollow(FollowedSeriesItem item)
+    {
+        if (_userId is null)
+        {
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var existing = await db.Follows.FindAsync(_userId, item.Series.Id);
+        if (existing is not null)
+        {
+            db.Follows.Remove(existing);
+            await db.SaveChangesAsync();
+        }
+
+        _items.Remove(item);
+    }
+
+    private class FollowedSeriesItem
+    {
+        public Series Series { get; set; } = null!;
+        public bool HasNewChapter { get; set; }
+        public DateTime FollowedAt { get; set; }
+        public DateTime? LastChapterAt { get; set; }
+    }
+}

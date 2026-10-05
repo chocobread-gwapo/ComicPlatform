@@ -1,0 +1,273 @@
+@page "/creator/new-series"
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Hosting
+@using Microsoft.EntityFrameworkCore
+@using ComicPlatform.Data
+@using ComicPlatform.Models
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@inject ApplicationDbContext Db
+@inject AuthenticationStateProvider AuthProvider
+@inject IWebHostEnvironment Env
+@inject NavigationManager Nav
+
+<PageTitle>Start a New Series</PageTitle>
+
+<HeadContent>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+</HeadContent>
+
+<div class="new-series">
+    <h1>Start a New Series</h1>
+
+    <EditForm Model="_model" OnValidSubmit="HandleSubmit" FormName="NewSeriesForm">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+
+        <div class="field">
+            <label>Title</label>
+            <InputText @bind-Value="_model.Title" />
+        </div>
+
+        <div class="field">
+            <label>Synopsis</label>
+            <InputTextArea @bind-Value="_model.Synopsis" rows="4" />
+        </div>
+
+        <div class="field">
+            <label>Status</label>
+            <InputSelect @bind-Value="_model.Status">
+                <option value="@SeriesStatus.Ongoing">Ongoing</option>
+                <option value="@SeriesStatus.Completed">Completed</option>
+                <option value="@SeriesStatus.Hiatus">Hiatus</option>
+            </InputSelect>
+        </div>
+
+        <div class="field">
+            <label>Genres</label>
+            <div class="genre-checkboxes">
+                @foreach (var genre in _allGenres)
+                {
+                    <label class="genre-checkbox">
+                        <input type="checkbox"
+                               checked="@_selectedGenreIds.Contains(genre.Id)"
+                               @onchange="@((e) => ToggleGenre(genre.Id, (bool)e.Value!))" />
+                        @genre.Name
+                    </label>
+                }
+            </div>
+        </div>
+
+        <div class="field">
+            <label>Cover Image (30 MB max)</label>
+            @if (_newCoverUrl is not null)
+            {
+                <img class="cover-preview" src="@_newCoverUrl" alt="Cover preview" />
+            }
+            <InputFile OnChange="OnCoverFileSelected" accept="image/*" />
+            @if (_uploadError is not null)
+            {
+                <p class="upload-error">@_uploadError</p>
+            }
+        </div>
+
+        <button type="submit">Create Series</button>
+    </EditForm>
+</div>
+
+<style>
+    .new-series {
+        font-family: 'Public Sans', sans-serif;
+        background: var(--paper);
+        color: var(--ink);
+        min-height: 100vh;
+        padding: 2.5rem 2rem 4rem;
+    }
+
+    h1 {
+        max-width: 600px;
+        margin: 0 auto 1.5rem;
+        font-family: 'Fraunces', serif;
+        font-weight: 900;
+        font-size: clamp(1.75rem, 4vw, 2.25rem);
+    }
+
+    form {
+        max-width: 600px;
+        margin: 0 auto;
+    }
+
+    .field {
+        margin-bottom: 1.25rem;
+    }
+
+    .field label {
+        display: block;
+        margin-bottom: 0.35rem;
+        font-weight: 600;
+    }
+
+    .field input[type="text"], .field textarea, .field select {
+        width: 100%;
+        padding: 0.6rem;
+        border: 1.5px solid var(--ink);
+        font-family: 'Public Sans', sans-serif;
+        background: var(--panel-bg);
+        color: var(--ink);
+        box-sizing: border-box;
+    }
+
+    .genre-checkboxes {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .genre-checkbox {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        border: 1.5px solid var(--ink);
+        padding: 0.3rem 0.7rem;
+        cursor: pointer;
+        font-size: 0.9rem;
+        font-weight: normal;
+    }
+
+    .cover-preview {
+        display: block;
+        width: 180px;
+        aspect-ratio: 3 / 4;
+        object-fit: cover;
+        border: 3px solid var(--ink);
+        margin-bottom: 0.75rem;
+    }
+
+    .upload-error {
+        color: var(--danger);
+        font-size: 0.9rem;
+        margin-top: 0.4rem;
+    }
+
+    button[type="submit"] {
+        background: var(--ink);
+        color: var(--paper);
+        border: 3px solid var(--ink);
+        padding: 0.65rem 1.5rem;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    button[type="submit"]:hover {
+        background: var(--accent);
+        border-color: var(--accent);
+    }
+</style>
+
+@code {
+    private const long MaxCoverSizeBytes = 30 * 1024 * 1024;
+
+    private readonly SeriesFormModel _model = new();
+    private List<Genre> _allGenres = new();
+    private HashSet<int> _selectedGenreIds = new();
+    private string? _newCoverUrl;
+    private string? _uploadError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _allGenres = await Db.Genres.OrderBy(g => g.Name).ToListAsync();
+    }
+
+    private void ToggleGenre(int genreId, bool isSelected)
+    {
+        if (isSelected)
+        {
+            _selectedGenreIds.Add(genreId);
+        }
+        else
+        {
+            _selectedGenreIds.Remove(genreId);
+        }
+    }
+
+    private async Task OnCoverFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+
+        if (file.Size > MaxCoverSizeBytes)
+        {
+            _uploadError = $"{file.Name} is {file.Size / (1024.0 * 1024.0):F1} MB — the limit is 30 MB.";
+            return;
+        }
+
+        try
+        {
+            var uploadsFolder = Path.Combine(Env.WebRootPath, "uploads", "covers");
+            Directory.CreateDirectory(uploadsFolder);
+
+            var fileName = $"{Guid.NewGuid()}{Path.GetExtension(file.Name)}";
+            var filePath = Path.Combine(uploadsFolder, fileName);
+
+            await using var stream = file.OpenReadStream(maxAllowedSize: MaxCoverSizeBytes);
+            await using var fileStream = new FileStream(filePath, FileMode.Create);
+            await stream.CopyToAsync(fileStream);
+
+            _newCoverUrl = $"/uploads/covers/{fileName}";
+            _uploadError = null;
+        }
+        catch (Exception)
+        {
+            _uploadError = $"{file.Name} failed to upload — try again.";
+        }
+    }
+
+    private async Task HandleSubmit()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        var userId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (userId is null)
+        {
+            return;
+        }
+
+        var selectedGenres = await Db.Genres
+            .Where(g => _selectedGenreIds.Contains(g.Id))
+            .ToListAsync();
+
+        var series = new Series
+        {
+            Title = _model.Title,
+            Synopsis = _model.Synopsis,
+            Status = _model.Status,
+            CoverImageUrl = _newCoverUrl,
+            CreatorId = userId
+        };
+
+        foreach (var genre in selectedGenres)
+        {
+            series.Genres.Add(genre);
+        }
+
+        Db.Series.Add(series);
+        await Db.SaveChangesAsync();
+
+        Nav.NavigateTo($"/creator/series/{series.Id}/new-chapter");
+    }
+
+    private class SeriesFormModel
+    {
+        [Required, MaxLength(200)]
+        public string Title { get; set; } = string.Empty;
+
+        public string Synopsis { get; set; } = string.Empty;
+
+        public SeriesStatus Status { get; set; } = SeriesStatus.Ongoing;
+    }
+}

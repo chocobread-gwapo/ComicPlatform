@@ -1,0 +1,160 @@
+@page "/creator/earnings"
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.EntityFrameworkCore
+@using ComicPlatform.Data
+@using Stripe
+@using System.Security.Claims
+@inject ApplicationDbContext Db
+@inject AuthenticationStateProvider AuthProvider
+@inject NavigationManager Nav
+
+<PageTitle>Earnings</PageTitle>
+
+<HeadContent>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+</HeadContent>
+
+<div class="earnings">
+    <h1>Earnings</h1>
+
+    @if (!_loaded)
+    {
+        <p class="loading">Loading...</p>
+    }
+    else
+    {
+        @if (_user!.StripeOnboardingComplete)
+        {
+            <div class="status ready">
+                <strong>You're set up.</strong>
+                <p>Your connected Stripe account can receive payouts. There's nothing to earn yet — ad revenue sharing isn't live on the site.</p>
+            </div>
+        }
+        else if (!string.IsNullOrEmpty(_user.StripeConnectAccountId))
+        {
+            <div class="status pending">
+                <strong>Setup started, not finished.</strong>
+                <p>Stripe needs a bit more from you — bank details or identity verification, usually — before payouts can go through.</p>
+            </div>
+            <button class="connect-btn" @onclick="StartOnboarding" disabled="@_submitting">Finish setup</button>
+        }
+        else
+        {
+            <div class="status none">
+                <strong>No payout account connected.</strong>
+                <p>This is where your share of ad revenue will go once that's live. Stripe handles your bank details directly — we never see them.</p>
+            </div>
+            <button class="connect-btn" @onclick="StartOnboarding" disabled="@_submitting">Connect payout account</button>
+        }
+
+        @if (_error is not null)
+        {
+            <p class="error">@_error</p>
+        }
+    }
+</div>
+
+<style>
+    .earnings { font-family: 'Public Sans', sans-serif; color: var(--ink); max-width: 560px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
+    h1 { font-family: 'Fraunces', serif; font-weight: 900; font-size: clamp(1.75rem, 4vw, 2.25rem); margin: 0 0 1.5rem; }
+    .loading { font-family: 'Fraunces', serif; font-size: 1.1rem; }
+
+    .status { border: 1.5px solid var(--ink); padding: 1rem 1.25rem; margin-bottom: 1.25rem; }
+    .status strong { display: block; font-family: 'Fraunces', serif; font-size: 1.05rem; margin-bottom: 0.4rem; }
+    .status p { margin: 0; color: var(--muted-text); font-size: 0.9rem; line-height: 1.5; }
+    .status.ready { border-color: var(--accent); }
+
+    .connect-btn { background: var(--ink); color: var(--paper); border: 3px solid var(--ink); padding: 0.65rem 1.5rem; font-weight: 600; font: inherit; cursor: pointer; }
+    .connect-btn:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); }
+    .connect-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .error { color: var(--danger); font-size: 0.9rem; margin-top: 1rem; }
+</style>
+
+@code {
+    [SupplyParameterFromQuery(Name = "stripe_return")]
+    private bool StripeReturn { get; set; }
+
+    private ApplicationUser? _user;
+    private bool _loaded;
+    private bool _submitting;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        var userId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        _user = await Db.Users.FindAsync(userId);
+
+        if (_user is not null && StripeReturn && !string.IsNullOrEmpty(_user.StripeConnectAccountId))
+        {
+            await RefreshAccountStatus();
+        }
+
+        _loaded = true;
+    }
+
+    private async Task RefreshAccountStatus()
+    {
+        try
+        {
+            var service = new AccountService();
+            var account = await service.GetAsync(_user!.StripeConnectAccountId);
+            _user.StripeOnboardingComplete = account.ChargesEnabled && account.PayoutsEnabled;
+            await Db.SaveChangesAsync();
+        }
+        catch (StripeException)
+        {
+            _error = "Couldn't confirm your Stripe status just now — try refreshing this page.";
+        }
+    }
+
+    private async Task StartOnboarding()
+    {
+        if (_user is null)
+        {
+            return;
+        }
+
+        _submitting = true;
+        _error = null;
+
+        try
+        {
+            if (string.IsNullOrEmpty(_user.StripeConnectAccountId))
+            {
+                var accountService = new AccountService();
+                var account = await accountService.CreateAsync(new AccountCreateOptions
+                {
+                    Type = "express",
+                    Email = _user.Email
+                });
+
+                _user.StripeConnectAccountId = account.Id;
+                await Db.SaveChangesAsync();
+            }
+
+            var baseUrl = Nav.BaseUri.TrimEnd('/');
+            var linkService = new AccountLinkService();
+            var link = await linkService.CreateAsync(new AccountLinkCreateOptions
+            {
+                Account = _user.StripeConnectAccountId,
+                RefreshUrl = $"{baseUrl}/creator/earnings",
+                ReturnUrl = $"{baseUrl}/creator/earnings?stripe_return=true",
+                Type = "account_onboarding"
+            });
+
+            Nav.NavigateTo(link.Url, forceLoad: true);
+        }
+        catch (StripeException)
+        {
+            _error = "Couldn't start Stripe setup just now — try again in a moment.";
+            _submitting = false;
+        }
+    }
+}

@@ -1,0 +1,134 @@
+@implements IDisposable
+@using ComicPlatform.Components.Shared
+@using ComicPlatform.Data
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@using System.Security.Claims
+
+@inject NavigationManager NavigationManager
+@inject UserManager<ApplicationUser> UserManager
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+
+<nav class="topnav" aria-label="Main">
+    <a class="brand" href=""><Logo /> Catkoom</a>
+
+    <div class="links">
+        <NavLink class="nav-link" href="" Match="NavLinkMatch.All">Home</NavLink>
+        <NavLink class="nav-link" href="categories">Categories</NavLink>
+        <NavLink class="nav-link" href="rankings">Rankings</NavLink>
+    </div>
+
+    <div class="right">
+        @ChildContent
+
+        <AuthorizeView>
+            <Authorized>
+                <a class="btn-solid" href="creator/my-series">Dashboard</a>
+                <div class="account-menu" tabindex="0">
+                    @{ var displayName = DisplayNameOf(context.User); }
+                    <span class="account-trigger">
+                        @if (!string.IsNullOrEmpty(avatarUrl))
+                        {
+                            <img class="trigger-avatar" src="@avatarUrl" alt="" />
+                        }
+                        else
+                        {
+                            <span class="trigger-avatar trigger-avatar-placeholder">@InitialOf(displayName)</span>
+                        }
+                        @displayName
+                    </span>
+                    <div class="account-dropdown">
+                        <a href="subscriptions">Subscriptions</a>
+                        <a href="following">Following</a>
+                        <a href="my-comments">Comments</a>
+                        <AuthorizeView Roles="Admin" Context="adminMenuAuth">
+                            <a href="admin">Admin</a>
+                        </AuthorizeView>
+                        <a href="Account/Manage">Account</a>
+                        <hr />
+                        <form action="Account/Logout" method="post">
+                            <AntiforgeryToken />
+                            <input type="hidden" name="ReturnUrl" value="@currentUrl" />
+                            <button type="submit">Logout</button>
+                        </form>
+                    </div>
+                </div>
+            </Authorized>
+            <NotAuthorized>
+                <NavLink class="pill-link" href="Account/Login">Login</NavLink>
+                <a class="btn-solid" href="Account/Register">Register</a>
+            </NotAuthorized>
+        </AuthorizeView>
+    </div>
+</nav>
+
+<style>
+    .trigger-avatar {
+        width: 22px;
+        height: 22px;
+        object-fit: cover;
+        border: 1.5px solid var(--ink);
+        vertical-align: -6px;
+        margin-right: 0.35rem;
+    }
+
+    .trigger-avatar-placeholder {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-family: 'Fraunces', serif;
+        font-weight: 600;
+        font-size: 0.7rem;
+        background: var(--panel-bg);
+        color: var(--ink);
+    }
+</style>
+
+@code {
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationStateTask { get; set; } = default!;
+
+    private string? currentUrl;
+    private string? avatarUrl;
+
+    protected override async Task OnInitializedAsync()
+    {
+        currentUrl = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
+        NavigationManager.LocationChanged += OnLocationChanged;
+
+        var authState = await AuthenticationStateTask;
+        var userId = UserManager.GetUserId(authState.User);
+
+        if (!string.IsNullOrEmpty(userId))
+        {
+            // Own short-lived context: NavMenu wraps every page and initializes
+            // alongside whatever that page's own OnInitializedAsync is doing, so
+            // it must not share a DbContext with it (same issue as Home.razor earlier).
+            await using var db = await DbFactory.CreateDbContextAsync();
+            avatarUrl = await db.Users
+                .Where(u => u.Id == userId)
+                .Select(u => u.AvatarUrl)
+                .FirstOrDefaultAsync();
+        }
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        currentUrl = NavigationManager.ToBaseRelativePath(e.Location);
+        StateHasChanged();
+    }
+
+    private static string DisplayNameOf(ClaimsPrincipal user) =>
+        user.FindFirstValue("DisplayName") ?? user.Identity?.Name ?? "?";
+
+    private static string InitialOf(string name) =>
+        string.IsNullOrWhiteSpace(name) ? "?" : name.Trim()[..1].ToUpperInvariant();
+
+    public void Dispose()
+    {
+        NavigationManager.LocationChanged -= OnLocationChanged;
+    }
+}

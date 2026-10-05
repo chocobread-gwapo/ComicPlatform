@@ -1,0 +1,31 @@
+.report-toggle {
+    background: none;
+    border: none;
+    color: var(--muted-text);
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 0;
+    margin-left: 0.6rem;
+}
+.report-toggle:hover { color: var(--danger); }
+.report-toggle:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+.report-form { display: inline-flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; margin-left: 0.6rem; }
+.report-form select { font-size: 0.8rem; padding: 0.2rem 0.4rem; border: 1.5px solid var(--ink); background: var(--panel-bg); color: var(--ink); }
+
+.report-submit, .report-cancel {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.2rem 0.55rem;
+    border: 1.5px solid var(--ink);
+    background: transparent;
+    color: var(--ink);
+    cursor: pointer;
+}
+.report-submit:hover { background: var(--ink); color: var(--paper); }
+.report-cancel:hover { background: var(--panel-bg); }
+.report-submit:focus-visible, .report-cancel:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+.report-state { font-size: 0.8rem; color: var(--muted-text); font-style: italic; margin-left: 0.6rem; }

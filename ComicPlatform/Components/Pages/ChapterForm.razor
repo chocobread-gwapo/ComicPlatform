@@ -1,0 +1,588 @@
+@page "/creator/series/{SeriesId:int}/new-chapter"
+@page "/creator/chapter/{ChapterId:int}/edit"
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Hosting
+@using Microsoft.EntityFrameworkCore
+@using ComicPlatform.Data
+@using ComicPlatform.Models
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@inject ApplicationDbContext Db
+@inject AuthenticationStateProvider AuthProvider
+@inject IWebHostEnvironment Env
+@inject NavigationManager Nav
+
+<PageTitle>@(IsEditMode ? "Edit Chapter" : "Add a Chapter")</PageTitle>
+
+<HeadContent>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+</HeadContent>
+
+<div class="chapter-form">
+    @if (!_loaded)
+    {
+        <p class="loading">Loading...</p>
+    }
+    else if (!_authorized)
+    {
+        <p class="loading">You don't have permission here (or it doesn't exist).</p>
+    }
+    else
+    {
+        <h1>@(IsEditMode ? "Edit Chapter" : $"Add a Chapter to {_seriesTitle}")</h1>
+
+        @if (IsEditMode)
+        {
+            <p class="view-stat">@_chapter!.ViewCount view@(_chapter.ViewCount == 1 ? "" : "s")</p>
+        }
+
+        <EditForm Model="_model" OnValidSubmit="HandleSubmit" FormName="ChapterForm">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+
+            <div class="field">
+                <label>Chapter Number</label>
+                @if (IsEditMode)
+                {
+                    <InputNumber @bind-Value="_model.Number" />
+                }
+                else
+                {
+                    <p class="computed-number">Chapter @_model.Number</p>
+                }
+            </div>
+
+            <div class="field">
+                <label>Chapter Title</label>
+                <InputText @bind-Value="_model.Title" placeholder="e.g. The Long Way Home" />
+            </div>
+
+            <div class="field">
+                <label>
+                    Pages
+                    @if (_pages.Count > 0)
+                    {
+                        <span class="page-count">(@_pages.Count)</span>
+                    }
+                </label>
+
+                @if (_pages.Count > 0)
+                {
+                    <div class="page-list">
+                        @{ var i = 1; }
+                        @foreach (var pg in _pages.OrderBy(p => p.PageNumber))
+                        {
+                            <div class="page-row">
+                                <span class="page-index">@i</span>
+                                <img src="@pg.ImageUrl" alt="Page @pg.PageNumber" class="page-thumb" />
+                                <div class="page-actions">
+                                    <button type="button" @onclick="() => MovePage(pg, -1)" aria-label="Move page up">&uarr;</button>
+                                    <button type="button" @onclick="() => MovePage(pg, 1)" aria-label="Move page down">&darr;</button>
+                                    <button type="button" class="delete-page" @onclick="() => DeletePage(pg)">Remove</button>
+                                </div>
+                            </div>
+                            i++;
+                        }
+                    </div>
+                }
+
+                <label class="drop-zone">
+                    <InputFile OnChange="OnPageFilesSelected" multiple accept="image/*" />
+                    <span class="drop-label">+ Add Pages</span>
+                    <span class="drop-hint">Drop images here or click to browse &middot; 30 MB max per image</span>
+                </label>
+
+                @if (_uploadErrors.Count > 0)
+                {
+                    <ul class="upload-errors">
+                        @foreach (var error in _uploadErrors)
+                        {
+                            <li>@error</li>
+                        }
+                    </ul>
+                }
+            </div>
+
+            <div class="field">
+                <label>Visibility</label>
+                <div class="publish-pills">
+                    <button type="button" class="pill @(_publishChoice == PublishChoice.Draft ? "on" : "")" @onclick="() => _publishChoice = PublishChoice.Draft">Draft</button>
+                    <button type="button" class="pill @(_publishChoice == PublishChoice.Now ? "on" : "")" @onclick="() => _publishChoice = PublishChoice.Now">Publish Now</button>
+                    <button type="button" class="pill @(_publishChoice == PublishChoice.Schedule ? "on" : "")" @onclick="() => _publishChoice = PublishChoice.Schedule">Schedule</button>
+                </div>
+                <p class="field-hint">@PublishHint()</p>
+
+                @if (_publishChoice == PublishChoice.Schedule)
+                {
+                    <InputDate Type="InputDateType.DateTimeLocal" @bind-Value="_model.PublishAt" />
+                    <p class="field-hint">Uses the server's clock (UTC) — not automatically adjusted to your local time zone.</p>
+                }
+            </div>
+
+            <button type="submit" disabled="@(_pages.Count == 0)">@(IsEditMode ? "Save Chapter Details" : "Save Chapter")</button>
+        </EditForm>
+    }
+</div>
+
+<style>
+    .chapter-form {
+        font-family: 'Public Sans', sans-serif;
+        background: var(--paper);
+        color: var(--ink);
+        min-height: 100vh;
+        padding: 2.5rem 2rem 4rem;
+    }
+
+    .loading {
+        max-width: 600px;
+        margin: 0 auto;
+        font-family: 'Fraunces', serif;
+        font-size: 1.1rem;
+    }
+
+    h1 {
+        max-width: 600px;
+        margin: 0 auto 1rem;
+        font-family: 'Fraunces', serif;
+        font-weight: 900;
+        font-size: clamp(1.75rem, 4vw, 2.25rem);
+    }
+
+    .view-stat {
+        max-width: 600px;
+        margin: 0 auto 1.5rem;
+        color: var(--accent);
+        font-weight: 600;
+    }
+
+    form {
+        max-width: 600px;
+        margin: 0 auto;
+    }
+
+    .field {
+        margin-bottom: 1.5rem;
+    }
+
+    .field > label {
+        display: block;
+        margin-bottom: 0.35rem;
+        font-weight: 600;
+    }
+
+    .page-count {
+        font-weight: normal;
+        color: var(--muted-text);
+        font-size: 0.9rem;
+    }
+
+    .field input[type="text"], .field input[type="number"], .field input[type="datetime-local"] {
+        width: 100%;
+        padding: 0.6rem;
+        border: 1.5px solid var(--ink);
+        font-family: 'Public Sans', sans-serif;
+        background: var(--panel-bg);
+        color: var(--ink);
+        box-sizing: border-box;
+    }
+
+    .computed-number {
+        margin: 0;
+        padding: 0.6rem 0;
+        font-weight: 600;
+        color: var(--accent);
+    }
+
+    .field-hint {
+        margin: 0.4rem 0 0;
+        font-size: 0.85rem;
+        color: var(--muted-text);
+        font-weight: normal;
+    }
+
+    .validation-errors {
+        list-style: none;
+        padding: 0;
+        margin: 0 auto 1.25rem;
+        max-width: 600px;
+    }
+
+    .validation-message {
+        color: var(--danger);
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+
+    button[type="submit"] {
+        background: var(--ink);
+        color: var(--paper);
+        border: 3px solid var(--ink);
+        padding: 0.65rem 1.5rem;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    button[type="submit"]:hover:not(:disabled) {
+        background: var(--accent);
+        border-color: var(--accent);
+    }
+
+    button[type="submit"]:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .page-list {
+        margin-top: 0.75rem;
+    }
+
+    .page-row {
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+        padding: 0.5rem 0;
+        border-bottom: 1.5px solid var(--border-soft);
+    }
+
+    .page-index {
+        width: 1.5rem;
+        flex-shrink: 0;
+        font-family: 'Fraunces', serif;
+        font-weight: 700;
+        color: var(--muted-text);
+        text-align: right;
+    }
+
+    .page-thumb {
+        width: 56px;
+        height: 74px;
+        object-fit: cover;
+        border: 1.5px solid var(--ink);
+        flex-shrink: 0;
+    }
+
+    .page-actions {
+        display: flex;
+        gap: 0.4rem;
+        margin-left: auto;
+    }
+
+    .page-actions button {
+        border: 1.5px solid var(--ink);
+        background: transparent;
+        color: var(--ink);
+        padding: 0.3rem 0.6rem;
+        cursor: pointer;
+        font-size: 0.85rem;
+    }
+
+    .page-actions button:hover {
+        background: var(--panel-bg);
+    }
+
+    .page-actions .delete-page {
+        color: var(--danger);
+        border-color: var(--danger);
+    }
+
+    .page-actions .delete-page:hover {
+        background: var(--danger);
+        color: var(--paper);
+    }
+
+    .drop-zone {
+        position: relative;
+        display: block;
+        margin-top: 0.75rem;
+        padding: 1.5rem 1rem;
+        border: 2px dashed var(--ink);
+        text-align: center;
+        cursor: pointer;
+        background: var(--panel-bg);
+    }
+
+    .drop-zone:hover {
+        background: var(--paper);
+    }
+
+    .drop-zone input[type="file"] {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        cursor: pointer;
+        width: 100%;
+        height: 100%;
+    }
+
+    .drop-label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 0.25rem;
+    }
+
+    .drop-hint {
+        display: block;
+        font-size: 0.8rem;
+        color: var(--muted-text);
+    }
+
+    .upload-errors {
+        color: var(--danger);
+        font-size: 0.85rem;
+        margin-top: 0.6rem;
+    }
+
+    .publish-pills {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        margin-top: 0.3rem;
+    }
+
+    .publish-pills .pill {
+        font: inherit;
+        font-size: 0.85rem;
+        font-weight: 600;
+        padding: 0.4rem 0.9rem;
+        cursor: pointer;
+        background: transparent;
+        color: var(--ink);
+        border: 1.5px solid var(--ink);
+    }
+
+    .publish-pills .pill:hover {
+        background: var(--panel-bg);
+    }
+
+    .publish-pills .pill.on {
+        background: var(--ink);
+        color: var(--paper);
+    }
+
+    .publish-pills .pill:focus-visible {
+        outline: 3px solid var(--accent);
+        outline-offset: 2px;
+    }
+</style>
+
+@code {
+    private const long MaxFileSizeBytes = 30 * 1024 * 1024;
+
+    private enum PublishChoice { Draft, Now, Schedule }
+
+    [Parameter] public int? SeriesId { get; set; }
+    [Parameter] public int? ChapterId { get; set; }
+
+    private bool IsEditMode => ChapterId.HasValue;
+
+    private bool _loaded;
+    private bool _authorized;
+    private string? _currentUserId;
+    private string _seriesTitle = string.Empty;
+    private Chapter? _chapter;
+    private readonly ChapterFormModel _model = new();
+    private readonly List<Page> _pages = new();
+    private readonly List<string> _uploadErrors = new();
+    private PublishChoice _publishChoice = PublishChoice.Now;
+
+    private string PublishHint() => _publishChoice switch
+    {
+        PublishChoice.Draft => "Only you and any co-authors can see this until you publish it.",
+        PublishChoice.Now => "Visible to readers as soon as you save.",
+        PublishChoice.Schedule => "Stays hidden from readers until the date/time below.",
+        _ => ""
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        _currentUserId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (IsEditMode)
+        {
+            var chapter = await Db.Chapters
+                .Include(c => c.Series)
+                .Include(c => c.Pages)
+                .FirstOrDefaultAsync(c => c.Id == ChapterId!.Value);
+
+            if (chapter is not null && chapter.Series.CreatorId == _currentUserId)
+            {
+                _chapter = chapter;
+                _seriesTitle = chapter.Series.Title;
+                _model.Number = chapter.Number;
+                _model.Title = chapter.Title;
+                _model.PublishAt = chapter.PublishedAt ?? DateTime.UtcNow;
+                _publishChoice = chapter.IsDraft ? PublishChoice.Draft : PublishChoice.Schedule;
+                _pages.AddRange(chapter.Pages);
+                _authorized = true;
+            }
+        }
+        else if (SeriesId.HasValue)
+        {
+            var series = await Db.Series.FindAsync(SeriesId.Value);
+
+            if (series is not null && series.CreatorId == _currentUserId)
+            {
+                _seriesTitle = series.Title;
+                _authorized = true;
+
+                var existingNumbers = await Db.Chapters
+                    .Where(c => c.SeriesId == SeriesId.Value)
+                    .Select(c => c.Number)
+                    .ToListAsync();
+
+                _model.Number = existingNumbers.Count == 0 ? 1 : existingNumbers.Max() + 1;
+            }
+        }
+
+        _loaded = true;
+    }
+
+    private async Task DeletePage(Page pg)
+    {
+        if (IsEditMode)
+        {
+            Db.Pages.Remove(pg);
+            await Db.SaveChangesAsync();
+        }
+
+        _pages.Remove(pg);
+    }
+
+    private async Task MovePage(Page pg, int direction)
+    {
+        var ordered = _pages.OrderBy(p => p.PageNumber).ToList();
+        var index = ordered.FindIndex(p => p == pg);
+        var swapIndex = index + direction;
+
+        if (swapIndex < 0 || swapIndex >= ordered.Count)
+        {
+            return;
+        }
+
+        (ordered[index].PageNumber, ordered[swapIndex].PageNumber) = (ordered[swapIndex].PageNumber, ordered[index].PageNumber);
+
+        if (IsEditMode)
+        {
+            await Db.SaveChangesAsync();
+        }
+    }
+
+    private async Task OnPageFilesSelected(InputFileChangeEventArgs e)
+    {
+        _uploadErrors.Clear();
+
+        var uploadsFolder = Path.Combine(Env.WebRootPath, "uploads", "pages");
+        Directory.CreateDirectory(uploadsFolder);
+
+        var nextPageNumber = _pages.Count == 0 ? 1 : _pages.Max(p => p.PageNumber) + 1;
+
+        foreach (var file in e.GetMultipleFiles(maximumFileCount: 100))
+        {
+            if (file.Size > MaxFileSizeBytes)
+            {
+                _uploadErrors.Add($"{file.Name} is {file.Size / (1024.0 * 1024.0):F1} MB — the limit is 30 MB.");
+                continue;
+            }
+
+            try
+            {
+                var fileName = $"{Guid.NewGuid()}{Path.GetExtension(file.Name)}";
+                var filePath = Path.Combine(uploadsFolder, fileName);
+
+                await using var stream = file.OpenReadStream(maxAllowedSize: MaxFileSizeBytes);
+                await using var fileStream = new FileStream(filePath, FileMode.Create);
+                await stream.CopyToAsync(fileStream);
+
+                var newPage = new Page
+                {
+                    PageNumber = nextPageNumber,
+                    ImageUrl = $"/uploads/pages/{fileName}"
+                };
+
+                if (IsEditMode && _chapter is not null)
+                {
+                    newPage.ChapterId = _chapter.Id;
+                    Db.Pages.Add(newPage);
+                    await Db.SaveChangesAsync();
+                }
+
+                _pages.Add(newPage);
+                nextPageNumber++;
+            }
+            catch (Exception)
+            {
+                _uploadErrors.Add($"{file.Name} failed to upload — try again.");
+            }
+        }
+    }
+
+    private async Task HandleSubmit()
+    {
+        var isDraft = _publishChoice == PublishChoice.Draft;
+
+        DateTime? publishedAt = _publishChoice switch
+        {
+            PublishChoice.Draft => null,
+            PublishChoice.Now => DateTime.UtcNow,
+            PublishChoice.Schedule => DateTime.SpecifyKind(_model.PublishAt, DateTimeKind.Utc),
+            _ => null
+        };
+
+        if (IsEditMode)
+        {
+            if (_chapter is null)
+            {
+                return;
+            }
+
+            _chapter.Number = _model.Number;
+            _chapter.Title = _model.Title;
+            _chapter.IsDraft = isDraft;
+            _chapter.PublishedAt = publishedAt;
+
+            await Db.SaveChangesAsync();
+
+            Nav.NavigateTo($"/series/{_chapter.SeriesId}");
+        }
+        else
+        {
+            if (SeriesId is null || _pages.Count == 0)
+            {
+                return;
+            }
+
+            var chapter = new Chapter
+            {
+                SeriesId = SeriesId.Value,
+                Number = _model.Number,
+                Title = _model.Title,
+                IsDraft = isDraft,
+                PublishedAt = publishedAt,
+                Pages = _pages
+            };
+
+            Db.Chapters.Add(chapter);
+            await Db.SaveChangesAsync();
+
+            Nav.NavigateTo($"/series/{SeriesId}");
+        }
+    }
+
+    private class ChapterFormModel
+    {
+        [Required, Range(1, int.MaxValue)]
+        public int Number { get; set; } = 1;
+
+        [Required, MaxLength(200)]
+        public string Title { get; set; } = string.Empty;
+
+        public DateTime PublishAt { get; set; } = DateTime.UtcNow;
+    }
+}

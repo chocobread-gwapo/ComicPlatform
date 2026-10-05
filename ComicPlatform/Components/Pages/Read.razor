@@ -1,0 +1,401 @@
+@page "/read/{SeriesId:int}/{ChapterNumber:int}"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.EntityFrameworkCore
+@using ComicPlatform.Data
+@using ComicPlatform.Models
+@using ComicPlatform.Components.Shared
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@inject ApplicationDbContext Db
+@inject AuthenticationStateProvider AuthProvider
+@inject IJSRuntime JS
+
+<PageTitle>@(_chapter?.Series.Title ?? "Loading") - Ch. @ChapterNumber</PageTitle>
+
+<HeadContent>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+</HeadContent>
+
+@if (_chapter is null)
+{
+    <p class="loading">Loading...</p>
+}
+else
+{
+    <div class="reader">
+
+        <div class="reader-top">
+            <a class="back" href="@($"/series/{SeriesId}")">&laquo; @_chapter.Series.Title</a>
+            <button class="ep-toggle" @onclick="() => _showEpisodeList = !_showEpisodeList">
+                Ch. @_chapter.Number@(string.IsNullOrWhiteSpace(_chapter.Title) ? "" : $": {_chapter.Title}")
+                <span class="chev @(_showEpisodeList ? "up" : "")">&#9662;</span>
+            </button>
+        </div>
+
+        @if (_showEpisodeList)
+        {
+            <div class="episode-panel">
+                @foreach (var c in _allChapters.OrderByDescending(x => x.Number))
+                {
+                    <a class="ep-row @(c.Number == ChapterNumber ? "current" : "")" href="@($"/read/{SeriesId}/{c.Number}")">
+                        <span class="ep-num">@c.Number</span>
+                        <span class="ep-title">@(string.IsNullOrWhiteSpace(c.Title) ? $"Chapter {c.Number}" : c.Title)</span>
+                        <span class="ep-date">@c.PublishedAt?.ToString("MMM d, yyyy")</span>
+                    </a>
+                }
+            </div>
+        }
+
+        <div class="reader-pages">
+            @foreach (var pg in _chapter.Pages.OrderBy(p => p.PageNumber))
+            {
+                <img src="@pg.ImageUrl" alt="Page @pg.PageNumber" class="reader-page-image" loading="@(pg.PageNumber <= 2 ? "eager" : "lazy")" />
+            }
+        </div>
+
+        <div class="like-section">
+            @if (_currentUserId is not null)
+            {
+                <button class="like-button @(_hasLiked ? "liked" : "")" @onclick="ToggleLike">
+                    <span class="heart">@(_hasLiked ? "♥" : "♡")</span> @(_hasLiked ? "Liked" : "Like")
+                </button>
+            }
+            else
+            {
+                <a class="like-login-prompt" href="/Account/Login">Log in to like this chapter</a>
+            }
+            <span class="like-count">@Compact(_likeCount) like@(_likeCount == 1 ? "" : "s")</span>
+        </div>
+
+        <div class="reader-nav">
+            @if (_prev is not null)
+            {
+                <a class="nav-card prev" href="@($"/read/{SeriesId}/{_prev.Number}")">
+                    <span class="nav-label">&laquo; Previous</span>
+                    <span class="nav-title">@(string.IsNullOrWhiteSpace(_prev.Title) ? $"Chapter {_prev.Number}" : _prev.Title)</span>
+                </a>
+            }
+            else { <span></span> }
+
+            @if (_next is not null)
+            {
+                <a class="nav-card next" href="@($"/read/{SeriesId}/{_next.Number}")">
+                    <span class="nav-label">Next &raquo;</span>
+                    <span class="nav-title">@(string.IsNullOrWhiteSpace(_next.Title) ? $"Chapter {_next.Number}" : _next.Title)</span>
+                </a>
+            }
+            else { <span></span> }
+        </div>
+
+        <div class="comments-section">
+            <h2>Comments <span class="count">@_comments.Count</span></h2>
+
+            <AuthorizeView>
+                <Authorized Context="authState">
+                    <EditForm Model="_commentModel" OnValidSubmit="HandleCommentSubmit" FormName="CommentForm" class="comment-form">
+                        <InputTextArea @bind-Value="_commentModel.Content" placeholder="Add a comment..." rows="3" />
+                        <button type="submit">Post Comment</button>
+                    </EditForm>
+                </Authorized>
+                <NotAuthorized>
+                    <p class="login-prompt"><a href="/Account/Login">Log in</a> to leave a comment.</p>
+                </NotAuthorized>
+            </AuthorizeView>
+
+            <div class="comment-list">
+                @if (_comments.Count == 0)
+                {
+                    <p class="no-comments">No comments yet — be the first.</p>
+                }
+                else
+                {
+                    @foreach (var comment in _comments)
+                    {
+                        <div class="comment">
+                            <div class="avatar">
+                                @if (!string.IsNullOrEmpty(comment.User.AvatarUrl))
+                                {
+                                    <img src="@comment.User.AvatarUrl" alt="" />
+                                }
+                                else
+                                {
+                                    @Initial(comment.User.DisplayName)
+                                }
+                            </div>
+                            <div class="comment-body">
+                                <div class="comment-meta">
+                                    <span class="comment-author">@comment.User.DisplayName</span>
+                                    <span class="comment-date">@comment.CreatedAt.ToString("MMM d, yyyy")</span>
+                                    @if (_currentUserId is not null && (comment.UserId == _currentUserId || _canModerate))
+                                    {
+                                        <button type="button" class="comment-delete" @onclick="() => DeleteComment(comment)">Delete</button>
+                                    }
+                                    @if (_currentUserId is not null && comment.UserId != _currentUserId)
+                                    {
+                                        <ReportButton TargetType="ReportTargetType.Comment" TargetId="comment.Id" />
+                                    }
+                                </div>
+                                <p class="comment-content">@comment.Content</p>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+
+    @if (_currentUserId is not null)
+    {
+        <button class="float-like @(_hasLiked ? "liked" : "")" @onclick="ToggleLike" aria-label="@(_hasLiked ? "Unlike this chapter" : "Like this chapter")">
+            <span class="heart">@(_hasLiked ? "♥" : "♡")</span>
+            <span class="n">@Compact(_likeCount)</span>
+        </button>
+    }
+}
+
+<style>
+    .loading { font-family: 'Fraunces', serif; text-align: center; padding: 3rem 0; }
+
+    .reader { font-family: 'Public Sans', sans-serif; color: var(--ink); max-width: 800px; margin: 0 auto; padding: 0 0 4rem; }
+
+    .reader-top { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.85rem 0; border-bottom: 1.5px solid var(--border-soft); flex-wrap: wrap; }
+    .back { color: var(--accent); font-weight: 600; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .back:hover { text-decoration: underline; }
+    .ep-toggle { display: flex; align-items: center; gap: 0.4rem; font: inherit; font-weight: 600; font-size: 0.9rem; background: transparent; color: var(--ink); border: 1.5px solid var(--ink); padding: 0.35rem 0.75rem; cursor: pointer; white-space: nowrap; }
+    .ep-toggle:hover { background: var(--panel-bg); }
+    .chev { display: inline-block; transition: transform 0.15s ease; }
+    .chev.up { transform: rotate(180deg); }
+
+    .episode-panel { max-height: 320px; overflow-y: auto; border-bottom: 1.5px solid var(--border-soft); background: var(--panel-bg); }
+    .ep-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.55rem 0.75rem; text-decoration: none; color: var(--ink); border-bottom: 1px solid var(--border-soft); }
+    .ep-row:hover { background: var(--paper); }
+    .ep-row.current { background: var(--ink); color: var(--paper); }
+    .ep-num { font-family: 'Fraunces', serif; font-weight: 700; width: 2.5rem; flex-shrink: 0; }
+    .ep-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ep-date { font-size: 0.8rem; opacity: 0.7; flex-shrink: 0; }
+
+    .reader-pages { display: flex; flex-direction: column; }
+    .reader-page-image { width: 100%; display: block; }
+
+    .like-section { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; padding: 2rem 0; border-bottom: 1.5px solid var(--border-soft); }
+    .like-button { display: flex; align-items: center; gap: 0.5rem; background: transparent; border: 3px solid var(--ink); color: var(--ink); padding: 0.65rem 1.75rem; font: inherit; font-weight: 600; font-size: 1rem; cursor: pointer; }
+    .like-button .heart { font-size: 1.2rem; }
+    .like-button:hover { background: var(--panel-bg); }
+    .like-button.liked { background: var(--accent); border-color: var(--accent); color: var(--paper); }
+    .like-button.liked:hover { background: var(--ink); border-color: var(--ink); }
+    .like-login-prompt { color: var(--accent); font-weight: 600; text-decoration: underline; }
+    .like-count { color: var(--muted-text); font-size: 0.85rem; }
+
+    .reader-nav { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; padding: 1.5rem 0; }
+    .nav-card { display: flex; flex-direction: column; gap: 0.3rem; border: 3px solid var(--ink); padding: 0.85rem 1rem; text-decoration: none; color: var(--ink); min-width: 0; }
+    .nav-card:hover { background: var(--panel-bg); }
+    .nav-card.next { text-align: right; }
+    .nav-label { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--muted-text); }
+    .nav-title { font-family: 'Fraunces', serif; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .comments-section { margin-top: 1rem; padding-top: 2rem; border-top: 3px solid var(--ink); }
+    .comments-section h2 { font-family: 'Fraunces', serif; font-weight: 600; font-size: 1.4rem; margin: 0 0 1.25rem; }
+    .comments-section .count { color: var(--muted-text); font-size: 1rem; font-weight: 400; }
+
+    .comment-form textarea { width: 100%; padding: 0.75rem; border: 1.5px solid var(--ink); font-family: 'Public Sans', sans-serif; font-size: 0.95rem; resize: vertical; box-sizing: border-box; background: var(--panel-bg); color: var(--ink); }
+    .comment-form button { margin-top: 0.6rem; background: var(--ink); color: var(--paper); border: none; padding: 0.55rem 1.25rem; font-weight: 600; cursor: pointer; }
+    .comment-form button:hover { background: var(--accent); }
+
+    .login-prompt { font-family: 'Fraunces', serif; font-style: italic; }
+    .login-prompt a { color: var(--accent); }
+
+    .comment-list { margin-top: 2rem; }
+    .comment { display: flex; gap: 0.75rem; padding: 1rem 0; border-bottom: 1.5px solid var(--border-soft); }
+    .avatar { width: 2.25rem; height: 2.25rem; flex-shrink: 0; border: 1.5px solid var(--ink); display: flex; align-items: center; justify-content: center; font-weight: 700; font-family: 'Fraunces', serif; background: var(--panel-bg); overflow: hidden; }
+    .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .comment-body { flex: 1; min-width: 0; }
+    .comment-meta { margin-bottom: 0.3rem; }
+    .comment-author { font-weight: 600; }
+    .comment-date { color: var(--muted-text); font-size: 0.85rem; margin-left: 0.5rem; }
+    .comment-delete { background: none; border: none; color: var(--danger); font-size: 0.8rem; font-weight: 600; cursor: pointer; text-decoration: underline; margin-left: 0.6rem; padding: 0; }
+    .comment-delete:hover { color: var(--ink); }
+    .comment-content { line-height: 1.55; margin: 0; overflow-wrap: break-word; }
+    .no-comments { font-family: 'Fraunces', serif; font-style: italic; opacity: 0.6; }
+
+    .float-like { position: fixed; right: 1.25rem; bottom: 1.5rem; z-index: 40; display: flex; flex-direction: column; align-items: center; gap: 0.1rem; background: var(--paper); color: var(--ink); border: 3px solid var(--ink); padding: 0.55rem 0.7rem; cursor: pointer; font: inherit; }
+    .float-like .heart { font-size: 1.3rem; line-height: 1; }
+    .float-like .n { font-size: 0.65rem; font-weight: 700; }
+    .float-like.liked { background: var(--accent); border-color: var(--accent); color: var(--paper); }
+
+    .float-like:focus-visible, .ep-toggle:focus-visible, .like-button:focus-visible, .nav-card:focus-visible, .ep-row:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+    @@media (max-width: 560px) {
+        .reader-nav { grid-template-columns: 1fr; }
+        .nav-card.next { text-align: left; }
+    }
+</style>
+
+@code {
+    [Parameter] public int SeriesId { get; set; }
+    [Parameter] public int ChapterNumber { get; set; }
+
+    private sealed record ChapterNav(int Number, string Title, DateTime? PublishedAt);
+
+    private Chapter? _chapter;
+    private List<ChapterNav> _allChapters = new();
+    private ChapterNav? _prev;
+    private ChapterNav? _next;
+    private bool _showEpisodeList;
+    private List<Comment> _comments = new();
+    private readonly CommentFormModel _commentModel = new();
+    private string? _currentUserId;
+    private bool _canModerate;
+    private int _likeCount;
+    private bool _hasLiked;
+    private int? _lastScrolledChapter;
+
+    private static string Compact(int n) => n >= 1_000_000 ? $"{n / 1_000_000.0:0.#}M"
+        : n >= 1_000 ? $"{n / 1_000.0:0.#}K"
+        : n.ToString();
+
+    private static string Initial(string name) => string.IsNullOrEmpty(name) ? "?" : name.Substring(0, 1).ToUpperInvariant();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _showEpisodeList = false;
+
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        _currentUserId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        _chapter = await Db.Chapters
+            .Include(c => c.Series)
+            .Include(c => c.Pages)
+            .FirstOrDefaultAsync(c => c.SeriesId == SeriesId && c.Number == ChapterNumber && !c.IsDraft && c.PublishedAt <= DateTime.UtcNow);
+
+        if (_chapter is not null)
+        {
+            _chapter.ViewCount++;
+            await Db.SaveChangesAsync();
+
+            _canModerate = _currentUserId is not null && (
+                authState.User.IsInRole("Admin") ||
+                _chapter.Series.CreatorId == _currentUserId ||
+                await Db.SeriesAuthors.AnyAsync(sa => sa.SeriesId == SeriesId && sa.UserId == _currentUserId));
+
+            var rows = await Db.Chapters
+                .Where(c => c.SeriesId == SeriesId && !c.IsDraft && c.PublishedAt <= DateTime.UtcNow)
+                .OrderBy(c => c.Number)
+                .Select(c => new { c.Number, c.Title, c.PublishedAt })
+                .ToListAsync();
+
+            _allChapters = rows.Select(r => new ChapterNav(r.Number, r.Title, r.PublishedAt)).ToList();
+            _prev = _allChapters.Where(c => c.Number < ChapterNumber).OrderByDescending(c => c.Number).FirstOrDefault();
+            _next = _allChapters.Where(c => c.Number > ChapterNumber).OrderBy(c => c.Number).FirstOrDefault();
+
+            _likeCount = await Db.Likes.CountAsync(l => l.ChapterId == _chapter.Id);
+
+            if (_currentUserId is not null)
+            {
+                _hasLiked = await Db.Likes.AnyAsync(l => l.ChapterId == _chapter.Id && l.UserId == _currentUserId);
+            }
+
+            await LoadComments();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_chapter is not null && _lastScrolledChapter != _chapter.Number)
+        {
+            _lastScrolledChapter = _chapter.Number;
+            await JS.InvokeVoidAsync("window.scrollTo", 0, 0);
+        }
+    }
+
+    private async Task ToggleLike()
+    {
+        if (_currentUserId is null || _chapter is null)
+        {
+            return;
+        }
+
+        if (_hasLiked)
+        {
+            var existing = await Db.Likes.FindAsync(_currentUserId, _chapter.Id);
+            if (existing is not null)
+            {
+                Db.Likes.Remove(existing);
+            }
+        }
+        else
+        {
+            Db.Likes.Add(new Like
+            {
+                UserId = _currentUserId,
+                ChapterId = _chapter.Id
+            });
+        }
+
+        await Db.SaveChangesAsync();
+        _hasLiked = !_hasLiked;
+        _likeCount += _hasLiked ? 1 : -1;
+    }
+
+    private async Task LoadComments()
+    {
+        if (_chapter is null)
+        {
+            return;
+        }
+
+        _comments = await Db.Comments
+            .Include(c => c.User)
+            .Where(c => c.ChapterId == _chapter.Id)
+            .OrderByDescending(c => c.CreatedAt)
+            .ToListAsync();
+    }
+
+    private async Task HandleCommentSubmit()
+    {
+        if (_chapter is null || _currentUserId is null || string.IsNullOrWhiteSpace(_commentModel.Content))
+        {
+            return;
+        }
+
+        Db.Comments.Add(new Comment
+        {
+            ChapterId = _chapter.Id,
+            UserId = _currentUserId,
+            Content = _commentModel.Content.Trim()
+        });
+
+        await Db.SaveChangesAsync();
+
+        _commentModel.Content = string.Empty;
+        await LoadComments();
+    }
+
+    private async Task DeleteComment(Comment comment)
+    {
+        if (_currentUserId is null || _chapter is null)
+        {
+            return;
+        }
+
+        var canDelete = comment.UserId == _currentUserId || _canModerate;
+
+        if (!canDelete)
+        {
+            return;
+        }
+
+        Db.Comments.Remove(comment);
+        await Db.SaveChangesAsync();
+
+        await LoadComments();
+    }
+
+    private class CommentFormModel
+    {
+        [Required, MaxLength(2000)]
+        public string Content { get; set; } = string.Empty;
+    }
+}

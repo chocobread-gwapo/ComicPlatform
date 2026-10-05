@@ -1,0 +1,65 @@
+﻿<!DOCTYPE html>
+<html lang="en" data-theme="@CurrentTheme">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <ResourcePreloader />
+    <link rel="stylesheet" href="@Assets["lib/bootstrap/dist/css/bootstrap.min.css"]" />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="@Assets["ComicPlatform.styles.css"]" />
+    <ImportMap />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <HeadOutlet @rendermode="PageRenderMode" />
+
+    <script>
+        window.setTheme = function (theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            document.cookie = 'theme=' + theme + ';path=/;max-age=31536000;samesite=lax';
+        };
+
+        // Plain-JS so the toggle button works even on pages with no interactive
+        // circuit (Identity's Account/Manage pages render static-only, since they
+        // need real cookie-writing POSTs — (onclick) never fires there). It only
+        // has to flip the attribute — CSS below reacts to data-theme directly,
+        // so there's no separate visual state to keep in sync.
+
+        window.toggleTheme = function () {
+            var current = document.documentElement.getAttribute('data-theme') || 'light';
+            window.setTheme(current === 'dark' ? 'light' : 'dark');
+        };
+    </script>
+
+</head>
+
+<body>
+    <Routes @rendermode="PageRenderMode" />
+    <ReconnectModal />
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <script src="@Assets["Components/Account/Shared/PasskeySubmit.razor.js"]" type="module"></script>
+</body>
+
+</html>
+
+@code {
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    private IComponentRenderMode? PageRenderMode =>
+        HttpContext.AcceptsInteractiveRouting() ? InteractiveServer : null;
+
+    private string CurrentTheme
+    {
+        get
+        {
+            if (HttpContext.Request.Cookies.TryGetValue("theme", out var theme) &&
+                (theme == "dark" || theme == "light"))
+            {
+                return theme;
+            }
+
+            return "light";
+        }
+    }
+}

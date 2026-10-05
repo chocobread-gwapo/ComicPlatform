@@ -1,0 +1,251 @@
+﻿@page "/Account/Manage"
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Identity
+@using ComicPlatform.Data
+@using ComicPlatform.Components.Shared
+
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
+@inject IdentityRedirectManager RedirectManager
+@inject IWebHostEnvironment Env
+
+<PageTitle>Profile</PageTitle>
+
+<AccountTabs />
+
+<h3>Profile</h3>
+<StatusMessage />
+
+<div class="row">
+    <div class="col-xl-6">
+        <div class="avatar-section mb-4">
+            <h4>Profile picture</h4>
+            <div class="avatar-row">
+                @if (!string.IsNullOrEmpty(user?.AvatarUrl))
+                {
+                    <img class="avatar-preview" src="@user.AvatarUrl" alt="Your profile picture" />
+                }
+                else
+                {
+                    <div class="avatar-preview avatar-placeholder">@AvatarInitial</div>
+                }
+                <div class="avatar-actions">
+                    <form method="post" enctype="multipart/form-data" @onsubmit="OnAvatarUploadAsync" @formname="avatar-upload">
+                        <AntiforgeryToken />
+                        <input type="file" name="avatar" accept="image/jpeg,image/png,image/webp" class="form-control mb-2" required />
+                        <div class="form-text mb-2">JPG, PNG or WebP, up to 2 MB.</div>
+                        <button type="submit" class="btn btn-primary">Upload</button>
+                    </form>
+                    @if (!string.IsNullOrEmpty(user?.AvatarUrl))
+                    {
+                        <form method="post" @onsubmit="OnAvatarRemoveAsync" @formname="avatar-remove" class="mt-2">
+                            <AntiforgeryToken />
+                            <button type="submit" class="btn btn-outline-secondary btn-sm">Remove picture</button>
+                        </form>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <EditForm Model="Input" FormName="profile" OnValidSubmit="OnValidSubmitAsync" method="post">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="text-danger" role="alert" />
+            <div class="form-floating mb-3">
+                <input type="text" value="@username" id="username" class="form-control" placeholder="Choose your username." disabled />
+                <label for="username" class="form-label">Username</label>
+            </div>
+            <div class="form-floating mb-3">
+                <InputText @bind-Value="Input.PhoneNumber" id="Input.PhoneNumber" class="form-control" placeholder="Enter your phone number" />
+                <label for="Input.PhoneNumber" class="form-label">Phone number</label>
+                <ValidationMessage For="() => Input.PhoneNumber" class="text-danger" />
+            </div>
+            <button type="submit" class="w-100 btn btn-lg btn-primary">Save</button>
+        </EditForm>
+    </div>
+</div>
+
+<style>
+    .avatar-row { display: flex; gap: 1.25rem; align-items: flex-start; flex-wrap: wrap; }
+    .avatar-preview { width: 96px; height: 96px; object-fit: cover; border: 3px solid var(--ink); background: var(--paper); flex-shrink: 0; }
+    .avatar-placeholder { display: flex; align-items: center; justify-content: center;
+        font-family: 'Fraunces', serif; font-weight: 600; font-size: 2.5rem; color: var(--ink);
+        background: repeating-linear-gradient(135deg, var(--paper), var(--paper) 10px, var(--hatch) 10px, var(--hatch) 11px); }
+    .avatar-actions { flex: 1; min-width: 220px; }
+</style>
+
+@code {
+    private ApplicationUser? user;
+    private string? username;
+    private string? phoneNumber;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Input ??= new();
+
+        user = await UserManager.GetUserAsync(HttpContext.User);
+        if (user is null)
+        {
+            RedirectManager.RedirectToInvalidUser(UserManager, HttpContext);
+            return;
+        }
+
+        username = await UserManager.GetUserNameAsync(user);
+        phoneNumber = await UserManager.GetPhoneNumberAsync(user);
+
+        Input.PhoneNumber ??= phoneNumber;
+    }
+
+    private const long MaxAvatarBytes = 2 * 1024 * 1024;
+
+    private string AvatarInitial =>
+        string.IsNullOrWhiteSpace(user?.DisplayName) ? "?" : user!.DisplayName.Trim()[..1].ToUpperInvariant();
+
+    private async Task OnAvatarUploadAsync()
+    {
+        if (user is null)
+        {
+            RedirectManager.RedirectToInvalidUser(UserManager, HttpContext);
+            return;
+        }
+
+        var form = await HttpContext.Request.ReadFormAsync();
+        var file = form.Files["avatar"];
+
+        if (file is null || file.Length == 0)
+        {
+            RedirectManager.RedirectToCurrentPageWithStatus("Error: Choose an image first.", HttpContext);
+            return;
+        }
+
+        if (file.Length > MaxAvatarBytes)
+        {
+            RedirectManager.RedirectToCurrentPageWithStatus("Error: That image is over the 2 MB limit.", HttpContext);
+            return;
+        }
+
+        // Check the real file signature instead of trusting the filename or content type.
+        var header = new byte[12];
+        int read;
+        await using (var probe = file.OpenReadStream())
+        {
+            read = await probe.ReadAtLeastAsync(header, header.Length, throwOnEndOfStream: false);
+        }
+
+        var extension = DetectImageExtension(header, read);
+        if (extension is null)
+        {
+            RedirectManager.RedirectToCurrentPageWithStatus("Error: Only JPG, PNG or WebP images are allowed.", HttpContext);
+            return;
+        }
+
+        var folder = Path.Combine(Env.WebRootPath, "uploads", "avatars");
+        Directory.CreateDirectory(folder);
+
+        var fileName = $"{Guid.NewGuid()}{extension}";
+        var filePath = Path.Combine(folder, fileName);
+
+        await using (var dest = File.Create(filePath))
+        await using (var src = file.OpenReadStream())
+        {
+            await src.CopyToAsync(dest);
+        }
+
+        var oldUrl = user.AvatarUrl;
+        user.AvatarUrl = $"/uploads/avatars/{fileName}";
+
+        var result = await UserManager.UpdateAsync(user);
+        if (!result.Succeeded)
+        {
+            DeleteAvatarFile($"/uploads/avatars/{fileName}");
+            RedirectManager.RedirectToCurrentPageWithStatus("Error: Could not save your picture. Try again.", HttpContext);
+            return;
+        }
+
+        DeleteAvatarFile(oldUrl);
+        RedirectManager.RedirectToCurrentPageWithStatus("Your profile picture has been updated", HttpContext);
+    }
+
+    private async Task OnAvatarRemoveAsync()
+    {
+        if (user is null)
+        {
+            RedirectManager.RedirectToInvalidUser(UserManager, HttpContext);
+            return;
+        }
+
+        var oldUrl = user.AvatarUrl;
+        user.AvatarUrl = null;
+
+        var result = await UserManager.UpdateAsync(user);
+        if (!result.Succeeded)
+        {
+            RedirectManager.RedirectToCurrentPageWithStatus("Error: Could not remove your picture. Try again.", HttpContext);
+            return;
+        }
+
+        DeleteAvatarFile(oldUrl);
+        RedirectManager.RedirectToCurrentPageWithStatus("Your profile picture has been removed", HttpContext);
+    }
+
+    private static string? DetectImageExtension(byte[] h, int n)
+    {
+        if (n >= 3 && h[0] == 0xFF && h[1] == 0xD8 && h[2] == 0xFF) return ".jpg";
+
+        if (n >= 8 && h[0] == 0x89 && h[1] == 0x50 && h[2] == 0x4E && h[3] == 0x47
+            && h[4] == 0x0D && h[5] == 0x0A && h[6] == 0x1A && h[7] == 0x0A) return ".png";
+
+        if (n >= 12 && h[0] == 'R' && h[1] == 'I' && h[2] == 'F' && h[3] == 'F'
+            && h[8] == 'W' && h[9] == 'E' && h[10] == 'B' && h[11] == 'P') return ".webp";
+
+        return null;
+    }
+
+    private void DeleteAvatarFile(string? url)
+    {
+        // Only ever touch files we created in the avatars folder.
+        if (string.IsNullOrEmpty(url) || !url.StartsWith("/uploads/avatars/", StringComparison.Ordinal)) return;
+
+        try
+        {
+            var path = Path.Combine(Env.WebRootPath, "uploads", "avatars", Path.GetFileName(url));
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch (IOException) { /* leftover file is harmless */ }
+    }
+
+    private async Task OnValidSubmitAsync()
+    {
+        if (user is null)
+        {
+            RedirectManager.RedirectToInvalidUser(UserManager, HttpContext);
+            return;
+        }
+
+        if (Input.PhoneNumber != phoneNumber)
+        {
+            var setPhoneResult = await UserManager.SetPhoneNumberAsync(user, Input.PhoneNumber);
+            if (!setPhoneResult.Succeeded)
+            {
+                RedirectManager.RedirectToCurrentPageWithStatus("Error: Failed to set phone number.", HttpContext);
+                return;
+            }
+        }
+
+        await SignInManager.RefreshSignInAsync(user);
+        RedirectManager.RedirectToCurrentPageWithStatus("Your profile has been updated", HttpContext);
+    }
+
+    private sealed class InputModel
+    {
+        [Phone]
+        [Display(Name = "Phone number")]
+        public string? PhoneNumber { get; set; }
+    }
+}

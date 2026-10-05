@@ -1,0 +1,360 @@
+@page "/series/{SeriesId:int}"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.EntityFrameworkCore
+@using ComicPlatform.Data
+@using ComicPlatform.Models
+@using ComicPlatform.Components.Shared
+@using System.Security.Claims
+@inject ApplicationDbContext Db
+@inject AuthenticationStateProvider AuthProvider
+
+<PageTitle>@(_series?.Title ?? "Series")</PageTitle>
+
+<HeadContent>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+</HeadContent>
+
+<div class="series-detail">
+    @if (!_loaded)
+    {
+        <p class="loading">Loading...</p>
+    }
+    else if (_series is null)
+    {
+        <p class="loading">That series doesn't exist.</p>
+    }
+    else
+    {
+        var first = _chapters.FirstOrDefault();
+
+        <div class="header">
+            <div class="cover">
+                @if (!string.IsNullOrEmpty(_series.CoverImageUrl))
+                {
+                    <img src="@_series.CoverImageUrl" alt="@_series.Title" />
+                }
+                else
+                {
+                    <div class="cover-placeholder">@_series.Title</div>
+                }
+            </div>
+
+            <div class="info">
+                @if (_series.Genres.Count > 0)
+                {
+                    <div class="genres">@string.Join(" · ", _series.Genres.Select(g => g.Name))</div>
+                }
+                <h1>@_series.Title</h1>
+                <p class="byline">
+                    @if (!string.IsNullOrEmpty(_series.Creator.AvatarUrl))
+                    {
+                        <img class="creator-avatar" src="@_series.Creator.AvatarUrl" alt="" />
+                    }
+                    by @_series.Creator.DisplayName
+                    <span class="status status-@_series.Status.ToString().ToLower()">@_series.Status</span>
+                    @if (_currentUserId is not null && _currentUserId != _series.CreatorId)
+                    {
+                        <button class="follow-creator @(_isFollowingCreator ? "following" : "")" @onclick="ToggleFollowCreator">
+                            @(_isFollowingCreator ? "Following creator" : "+ Follow creator")
+                        </button>
+                    }
+                </p>
+
+                <dl class="stats">
+                    <div><dt>Views</dt><dd>@Compact(_views)</dd></div>
+                    <div><dt>Followers</dt><dd>@Compact(_followers)</dd></div>
+                    <div><dt>Likes</dt><dd>@Compact(_likes)</dd></div>
+                </dl>
+
+                <div class="action-row">
+                    @if (first is not null)
+                    {
+                        <a class="start-reading" href="@($"/read/{_series.Id}/{first.Number}")">Read first episode</a>
+                    }
+
+                    @if (_currentUserId is not null)
+                    {
+                        <button class="follow-button @(_isFollowing ? "following" : "")" @onclick="ToggleFollow">
+                            @(_isFollowing ? "Following" : "Follow")
+                        </button>
+                    }
+                    else
+                    {
+                        <a class="follow-login-prompt" href="/Account/Login">Log in to follow</a>
+                    }
+                </div>
+
+                @if (_currentUserId is not null)
+                {
+                    <div class="report-row">
+                        <ReportButton TargetType="ReportTargetType.Series" TargetId="SeriesId" />
+                    </div>
+                }
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_series.Synopsis))
+        {
+            <p class="synopsis">@_series.Synopsis</p>
+        }
+
+        <div class="chapters">
+            <div class="chapters-head">
+                <h2>Episodes <span class="count">@_chapters.Count</span></h2>
+                <div class="sort">
+                    <button class="@(_newestFirst ? "on" : "")" @onclick="() => _newestFirst = true">Newest</button>
+                    <button class="@(!_newestFirst ? "on" : "")" @onclick="() => _newestFirst = false">Oldest</button>
+                </div>
+            </div>
+
+            @if (_chapters.Count == 0)
+            {
+                <p>No chapters published yet.</p>
+            }
+            else
+            {
+                @foreach (var chapter in Ordered)
+                {
+                    <div class="chapter-row">
+                        <a class="chapter-link" href="@($"/read/{_series.Id}/{chapter.Number}")">
+                            <span class="thumb">
+                                @if (!string.IsNullOrEmpty(chapter.Thumb))
+                                {
+                                    <img src="@chapter.Thumb" alt="" loading="lazy" />
+                                }
+                            </span>
+                            <span class="meta">
+                                <span class="chapter-name">
+                                    @(string.IsNullOrWhiteSpace(chapter.Title) ? $"Chapter {chapter.Number}" : chapter.Title)
+                                    @if (chapter.PublishedAt > DateTime.UtcNow.AddDays(-3)) { <span class="badge">NEW</span> }
+                                </span>
+                                <span class="sub">@chapter.PublishedAt?.ToString("MMM d, yyyy") <span class="likes">@chapter.Likes.ToString("N0")</span></span>
+                            </span>
+                            <span class="num">#@chapter.Number</span>
+                        </a>
+                        @if (_isAuthor)
+                        {
+                            <a class="chapter-edit-link" href="@($"/creator/chapter/{chapter.Id}/edit")">Edit</a>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .series-detail { font-family: 'Public Sans', sans-serif; color: var(--ink); max-width: 960px; margin: 0 auto; padding: 1.5rem 0 3rem; }
+
+    .header { display: flex; gap: 2rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+    .header .cover { width: 200px; aspect-ratio: 3 / 4; flex-shrink: 0; border: 3px solid var(--ink); overflow: hidden; background: var(--paper); }
+    .header .cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .header .cover-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; text-align: center;
+        padding: 1rem; font-family: 'Fraunces', serif; font-weight: 600;
+        background: repeating-linear-gradient(135deg, var(--paper), var(--paper) 10px, var(--hatch) 10px, var(--hatch) 11px); }
+
+    .info { flex: 1; min-width: 260px; display: flex; flex-direction: column; }
+    .genres { font-size: 0.8rem; font-weight: 600; color: var(--muted-text); text-transform: uppercase; letter-spacing: 0.04em; }
+    .info h1 { font-family: 'Fraunces', serif; font-weight: 900; font-size: clamp(1.75rem, 4vw, 2.5rem); line-height: 1.1; margin: 0.25rem 0 0.5rem; }
+    .byline { font-family: 'Fraunces', serif; font-style: italic; margin: 0 0 1rem; display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+    .creator-avatar { width: 24px; height: 24px; object-fit: cover; border: 1.5px solid var(--ink); background: var(--paper); }
+    .follow-creator { font-family: 'Public Sans', sans-serif; font-style: normal; font-size: 0.75rem; font-weight: 600; cursor: pointer;
+        background: transparent; color: var(--accent); border: none; padding: 0; text-decoration: underline; }
+    .follow-creator.following { color: var(--muted-text); text-decoration: none; }
+    .follow-creator:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+    .stats { display: flex; gap: 2rem; margin: 0 0 1.25rem; padding: 0.75rem 0; border-top: 1.5px solid var(--ink); border-bottom: 1.5px solid var(--ink); }
+    .stats div { display: flex; flex-direction: column; }
+    .stats dt { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; color: var(--muted-text); }
+    .stats dd { margin: 0; font-family: 'Fraunces', serif; font-weight: 600; font-size: 1.25rem; }
+
+    .action-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-top: auto; }
+    .report-row { margin-top: 0.6rem; }
+    .start-reading { display: inline-block; background: var(--ink); color: var(--paper); text-decoration: none; font-weight: 600; padding: 0.7rem 1.5rem; border: 3px solid var(--ink); }
+    .start-reading:hover { background: var(--accent); border-color: var(--accent); }
+    .follow-button { background: transparent; color: var(--ink); border: 3px solid var(--ink); padding: 0.7rem 1.5rem; font: inherit; font-weight: 600; cursor: pointer; }
+    .follow-button:hover { background: var(--panel-bg); }
+    .follow-button.following { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+    .follow-button.following:hover { background: var(--ink); border-color: var(--ink); }
+    .follow-login-prompt { color: var(--accent); font-weight: 600; text-decoration: underline; }
+    .start-reading:focus-visible, .follow-button:focus-visible, .sort button:focus-visible, .chapter-link:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+    .status { font-family: 'Public Sans', sans-serif; font-style: normal; font-size: 0.7rem; font-weight: 600; padding: 0.1rem 0.5rem; border: 1.5px solid var(--ink); }
+    .status-ongoing { background: var(--ink); color: var(--paper); }
+    .status-hiatus { opacity: 0.55; }
+
+    .synopsis { line-height: 1.6; max-width: 70ch; margin: 0 0 2rem; }
+
+    .chapters-head { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid var(--ink); padding-bottom: 0.5rem; }
+    .chapters h2 { font-family: 'Fraunces', serif; font-size: 1.4rem; margin: 0; }
+    .count { color: var(--muted-text); font-size: 1rem; font-weight: 400; }
+    .sort { display: flex; }
+    .sort button { font: inherit; font-size: 0.8rem; font-weight: 600; padding: 0.3rem 0.8rem; cursor: pointer; background: transparent; color: var(--ink); border: 1.5px solid var(--ink); }
+    .sort button + button { border-left: none; }
+    .sort button.on { background: var(--ink); color: var(--paper); }
+
+    .chapter-row { display: flex; align-items: center; border-bottom: 1.5px solid var(--ink); }
+    .chapter-link { flex: 1; min-width: 0; display: flex; align-items: center; gap: 1rem; padding: 0.75rem 0.25rem; text-decoration: none; color: var(--ink); }
+    .chapter-row:hover .chapter-link { background: var(--panel-bg); }
+    .thumb { width: 88px; aspect-ratio: 1; flex-shrink: 0; border: 2px solid var(--ink); background: var(--panel-bg); overflow: hidden; }
+    .thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
+    .meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+    .chapter-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .badge { margin-left: 0.4rem; padding: 0.05rem 0.35rem; font-size: 0.65rem; font-weight: 700; background: var(--accent); color: var(--paper); }
+    .sub { font-size: 0.8rem; color: var(--muted-text); }
+    .likes { margin-left: 0.75rem; }
+    .likes::before { content: "\2665\00a0"; color: var(--accent); }
+    .num { font-family: 'Fraunces', serif; font-weight: 600; color: var(--muted-text); padding-right: 0.5rem; }
+    .chapter-edit-link { color: var(--accent); font-weight: 600; font-size: 0.85rem; text-decoration: underline; padding: 0 0.75rem; white-space: nowrap; }
+
+    .loading { font-family: 'Fraunces', serif; font-size: 1.1rem; }
+
+    @@media (max-width: 560px) {
+        .header .cover { width: 140px; }
+        .stats { gap: 1.25rem; }
+        .thumb { width: 64px; }
+    }
+</style>
+
+@code {
+    [Parameter] public int SeriesId { get; set; }
+
+    private sealed record ChapterRow(int Id, int Number, string Title, DateTime? PublishedAt, string? Thumb, int Likes);
+
+    private Series? _series;
+    private List<ChapterRow> _chapters = new();
+    private bool _loaded;
+    private bool _newestFirst = true;
+    private string? _currentUserId;
+    private bool _isAuthor;
+    private bool _isFollowing;
+    private bool _isFollowingCreator;
+    private int _views, _likes, _followers;
+
+    private IEnumerable<ChapterRow> Ordered => _newestFirst
+        ? _chapters.OrderByDescending(c => c.Number)
+        : _chapters.OrderBy(c => c.Number);
+
+    private static string Compact(int n) => n >= 1_000_000 ? $"{n / 1_000_000.0:0.#}M"
+        : n >= 1_000 ? $"{n / 1_000.0:0.#}K"
+        : n.ToString();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        _currentUserId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        _series = await Db.Series
+            .Include(s => s.Creator)
+            .Include(s => s.Genres)
+            .FirstOrDefaultAsync(s => s.Id == SeriesId);
+
+        if (_series is not null)
+        {
+            var now = DateTime.UtcNow;
+
+            var rows = await Db.Chapters
+                .Where(c => c.SeriesId == SeriesId && !c.IsDraft && c.PublishedAt <= now)
+                .OrderBy(c => c.Number)
+                .Select(c => new
+                {
+                    c.Id,
+                    c.Number,
+                    c.Title,
+                    c.PublishedAt,
+                    Thumb = c.Pages.OrderBy(p => p.PageNumber).Select(p => p.ImageUrl).FirstOrDefault(),
+                    Likes = Db.Likes.Count(l => l.ChapterId == c.Id)
+                })
+                .ToListAsync();
+
+            _chapters = rows.Select(r => new ChapterRow(r.Id, r.Number, r.Title, r.PublishedAt, r.Thumb, r.Likes)).ToList();
+            _likes = _chapters.Sum(c => c.Likes);
+            _views = await Db.Chapters.Where(c => c.SeriesId == SeriesId).SumAsync(c => c.ViewCount);
+            _followers = await Db.Follows.CountAsync(f => f.SeriesId == SeriesId);
+        }
+
+        if (_series is not null && _currentUserId is not null)
+        {
+            _isAuthor = _series.CreatorId == _currentUserId ||
+                await Db.SeriesAuthors.AnyAsync(sa => sa.SeriesId == SeriesId && sa.UserId == _currentUserId);
+
+            var follow = await Db.Follows.FindAsync(_currentUserId, SeriesId);
+            _isFollowing = follow is not null;
+
+            if (follow is not null)
+            {
+                follow.LastViewedAt = DateTime.UtcNow;
+                await Db.SaveChangesAsync();
+            }
+
+            if (_currentUserId != _series.CreatorId)
+            {
+                var creatorFollow = await Db.CreatorFollows.FindAsync(_currentUserId, _series.CreatorId);
+                _isFollowingCreator = creatorFollow is not null;
+            }
+        }
+
+        _loaded = true;
+    }
+
+    private async Task ToggleFollow()
+    {
+        if (_currentUserId is null || _series is null)
+        {
+            return;
+        }
+
+        if (_isFollowing)
+        {
+            var existing = await Db.Follows.FindAsync(_currentUserId, _series.Id);
+            if (existing is not null)
+            {
+                Db.Follows.Remove(existing);
+            }
+            _followers--;
+        }
+        else
+        {
+            Db.Follows.Add(new Follow
+            {
+                UserId = _currentUserId,
+                SeriesId = _series.Id
+            });
+            _followers++;
+        }
+
+        await Db.SaveChangesAsync();
+        _isFollowing = !_isFollowing;
+    }
+
+    private async Task ToggleFollowCreator()
+    {
+        if (_currentUserId is null || _series is null || _currentUserId == _series.CreatorId)
+        {
+            return;
+        }
+
+        if (_isFollowingCreator)
+        {
+            var existing = await Db.CreatorFollows.FindAsync(_currentUserId, _series.CreatorId);
+            if (existing is not null)
+            {
+                Db.CreatorFollows.Remove(existing);
+            }
+        }
+        else
+        {
+            Db.CreatorFollows.Add(new CreatorFollow
+            {
+                UserId = _currentUserId,
+                CreatorId = _series.CreatorId
+            });
+        }
+
+        await Db.SaveChangesAsync();
+        _isFollowingCreator = !_isFollowingCreator;
+    }
+}

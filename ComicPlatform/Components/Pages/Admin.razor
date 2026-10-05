@@ -1,0 +1,258 @@
+@page "/admin"
+@attribute [Authorize(Roles = "Admin")]
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.EntityFrameworkCore
+@using ComicPlatform.Data
+@using ComicPlatform.Models
+@inject ApplicationDbContext Db
+
+<PageTitle>Admin</PageTitle>
+
+<HeadContent>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+</HeadContent>
+
+<div class="admin">
+    <div class="page-head">
+        <h1>Admin</h1>
+        <div class="header-links">
+            <a class="reports-link" href="/admin/users">Users</a>
+            <a class="reports-link" href="/admin/reports">
+                Reports
+                @if (_pendingReportCount > 0)
+                {
+                    <span class="badge">@_pendingReportCount</span>
+                }
+            </a>
+        </div>
+    </div>
+
+    @if (_all is not null && _all.Count > 0)
+    {
+        <div class="controls">
+            <input type="search" class="search" placeholder="Search by title or creator..." @oninput="OnSearch" />
+            <div class="pills">
+                @foreach (var s in _statusTabs)
+                {
+                    <button class="pill @(s == _statusFilter ? "on" : "")" @onclick="() => _statusFilter = s">@s</button>
+                }
+            </div>
+        </div>
+    }
+
+    @if (_all is null)
+    {
+        <p class="loading">Loading...</p>
+    }
+    else if (_all.Count == 0)
+    {
+        <p class="loading">Nothing published yet.</p>
+    }
+    else if (!Filtered.Any())
+    {
+        <p class="loading">No series match.</p>
+    }
+    else
+    {
+        <div class="series-list">
+            @foreach (var s in Filtered)
+            {
+                <div class="row">
+                    <a class="thumb" href="@($"/series/{s.Id}")">
+                        @if (!string.IsNullOrEmpty(s.Cover))
+                        {
+                            <img src="@s.Cover" alt="" loading="lazy" />
+                        }
+                        else
+                        {
+                            <div class="thumb-placeholder">@s.Title</div>
+                        }
+                    </a>
+
+                    <div class="info">
+                        <div class="title-line">
+                            <a class="title" href="@($"/series/{s.Id}")">@s.Title</a>
+                            <span class="status status-@s.Status.ToString().ToLower()">@s.Status</span>
+                            @if (s.PendingReports > 0)
+                            {
+                                <a class="report-badge" href="/admin/reports">@s.PendingReports reported</a>
+                            }
+                        </div>
+                        <span class="creator-name">by @s.CreatorName</span>
+                        <div class="meta-line">
+                            <span>@ChapterSummary(s.Published, s.Drafts)</span>
+                            <span class="created">Added @s.CreatedAt.ToString("MMM d, yyyy")</span>
+                        </div>
+                    </div>
+
+                    <div class="actions">
+                        <a class="btn" href="@($"/series/{s.Id}")">View</a>
+                        @if (_confirmingDeleteId == s.Id)
+                        {
+                            <span class="confirm-delete">
+                                Delete permanently?
+                                <button type="button" class="confirm-yes" @onclick="() => DeleteSeries(s.Id)">Yes</button>
+                                <button type="button" class="confirm-no" @onclick="() => _confirmingDeleteId = null">Cancel</button>
+                            </span>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn danger" @onclick="() => _confirmingDeleteId = s.Id">Delete</button>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .admin { font-family: 'Public Sans', sans-serif; color: var(--ink); max-width: 1000px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+
+    .page-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem; padding-bottom: 1rem; border-bottom: 3px solid var(--ink); }
+    .page-head h1 { font-family: 'Fraunces', serif; font-weight: 900; font-size: clamp(1.5rem, 4vw, 2rem); margin: 0; }
+
+    .header-links { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+    .reports-link { display: inline-flex; align-items: center; gap: 0.45rem; font-weight: 600; font-size: 0.9rem; color: var(--ink); text-decoration: none; border: 1.5px solid var(--ink); padding: 0.4rem 0.9rem; }
+    .reports-link:hover { background: var(--panel-bg); }
+
+    .badge { display: inline-flex; align-items: center; justify-content: center; min-width: 1.4rem; height: 1.4rem; padding: 0 0.3rem; background: var(--danger); color: var(--paper); font-size: 0.75rem; font-weight: 700; }
+
+    .controls { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.25rem; }
+    .search { flex: 1; min-width: 200px; max-width: 320px; padding: 0.5rem 0.75rem; border: 1.5px solid var(--ink); background: var(--panel-bg); color: var(--ink); font: inherit; font-size: 0.9rem; box-sizing: border-box; }
+    .search:focus { outline: 3px solid var(--accent); outline-offset: 1px; }
+
+    .pills { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .pill { font: inherit; font-size: 0.8rem; font-weight: 600; padding: 0.35rem 0.85rem; cursor: pointer; background: transparent; color: var(--ink); border: 1.5px solid var(--ink); }
+    .pill:hover { background: var(--panel-bg); }
+    .pill.on { background: var(--ink); color: var(--paper); }
+    .pill:focus-visible, .reports-link:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+    .row { display: flex; align-items: center; gap: 1rem; padding: 1rem 0.1rem; border-bottom: 1.5px solid var(--border-soft); flex-wrap: wrap; }
+    .row:first-of-type { border-top: 1.5px solid var(--border-soft); }
+
+    .thumb { display: block; width: 56px; aspect-ratio: 3 / 4; flex-shrink: 0; border: 2px solid var(--ink); overflow: hidden; background: var(--panel-bg); }
+    .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .thumb-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; text-align: center; padding: 0.25rem; font-family: 'Fraunces', serif; font-weight: 600; font-size: 0.6rem; line-height: 1.1;
+        background: repeating-linear-gradient(135deg, var(--paper), var(--paper) 8px, var(--hatch) 8px, var(--hatch) 9px); }
+
+    .info { flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 0.3rem; }
+    .title-line { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+    .title { font-family: 'Fraunces', serif; font-weight: 600; font-size: 1.1rem; color: var(--ink); text-decoration: none; }
+    .title:hover { text-decoration: underline; }
+    .creator-name { font-size: 0.85rem; color: var(--accent); }
+    .meta-line { display: flex; gap: 1rem; font-size: 0.8rem; color: var(--muted-text); flex-wrap: wrap; }
+
+    .report-badge { font-size: 0.7rem; font-weight: 700; text-decoration: none; color: var(--paper); background: var(--danger); padding: 0.1rem 0.5rem; }
+    .report-badge:hover { opacity: 0.85; }
+
+    .actions { display: flex; align-items: center; gap: 0.6rem; flex-shrink: 0; margin-left: auto; }
+    .btn { display: inline-block; font: inherit; font-size: 0.85rem; font-weight: 600; text-decoration: none; cursor: pointer; padding: 0.4rem 0.9rem; border: 1.5px solid var(--ink); color: var(--ink); background: transparent; }
+    .btn:hover { background: var(--panel-bg); }
+    .btn.danger { border-color: var(--danger); color: var(--danger); }
+    .btn.danger:hover { background: var(--danger); color: var(--paper); }
+    .btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+    .confirm-delete { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--danger); font-weight: 600; }
+    .confirm-yes, .confirm-no { border: 1.5px solid var(--ink); background: var(--panel-bg); color: var(--ink); padding: 0.3rem 0.65rem; font-size: 0.8rem; cursor: pointer; }
+    .confirm-yes { border-color: var(--danger); color: var(--danger); }
+
+    .status { display: inline-block; font-size: 0.7rem; font-weight: 600; padding: 0.1rem 0.5rem; border: 1.5px solid var(--ink); }
+    .status-ongoing { background: var(--ink); color: var(--paper); }
+    .status-hiatus { opacity: 0.55; }
+
+    .loading { font-family: 'Fraunces', serif; font-size: 1.1rem; }
+
+    @@media (max-width: 640px) {
+        .row { position: relative; }
+        .info { order: 1; }
+        .actions { order: 2; width: 100%; margin-left: 0; }
+    }
+</style>
+
+@code {
+    private sealed record Row(int Id, string Title, string? Cover, SeriesStatus Status, DateTime CreatedAt,
+        string CreatorName, int Published, int Drafts, int PendingReports);
+
+    private List<Row>? _all;
+    private int _pendingReportCount;
+    private string _query = "";
+    private string _statusFilter = "All";
+    private int? _confirmingDeleteId;
+
+    private static readonly string[] _statusTabs = { "All", "Ongoing", "Completed", "Hiatus" };
+
+    private IEnumerable<Row> Filtered => (_all ?? Enumerable.Empty<Row>())
+        .Where(s => _statusFilter == "All" || s.Status.ToString() == _statusFilter)
+        .Where(s => string.IsNullOrWhiteSpace(_query)
+            || s.Title.Contains(_query, StringComparison.OrdinalIgnoreCase)
+            || s.CreatorName.Contains(_query, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        var rows = await Db.Series
+            .OrderByDescending(s => s.CreatedAt)
+            .Select(s => new
+            {
+                s.Id,
+                s.Title,
+                s.CoverImageUrl,
+                s.Status,
+                s.CreatedAt,
+                CreatorName = s.Creator.DisplayName,
+                Published = s.Chapters.Count(c => !c.IsDraft),
+                Drafts = s.Chapters.Count(c => c.IsDraft),
+                PendingReports = Db.Reports.Count(r => r.Status == ReportStatus.Pending &&
+                    (r.SeriesId == s.Id || (r.Comment != null && r.Comment.Chapter.SeriesId == s.Id)))
+            })
+            .ToListAsync();
+
+        _all = rows.Select(r => new Row(r.Id, r.Title, r.CoverImageUrl, r.Status, r.CreatedAt,
+            r.CreatorName, r.Published, r.Drafts, r.PendingReports)).ToList();
+
+        _pendingReportCount = await Db.Reports.CountAsync(r => r.Status == ReportStatus.Pending);
+    }
+
+    private void OnSearch(ChangeEventArgs e) => _query = e.Value?.ToString() ?? "";
+
+    private static string ChapterSummary(int published, int drafts)
+    {
+        if (published == 0 && drafts == 0)
+        {
+            return "No chapters yet";
+        }
+
+        var parts = new List<string>();
+        if (published > 0)
+        {
+            parts.Add($"{published} published");
+        }
+        if (drafts > 0)
+        {
+            parts.Add($"{drafts} draft{(drafts == 1 ? "" : "s")}");
+        }
+
+        return string.Join(", ", parts);
+    }
+
+    private async Task DeleteSeries(int seriesId)
+    {
+        var series = await Db.Series.FindAsync(seriesId);
+        if (series is not null)
+        {
+            var directReports = await Db.Reports
+                .Where(r => r.SeriesId == seriesId)
+                .ToListAsync();
+            Db.Reports.RemoveRange(directReports);
+
+            Db.Series.Remove(series);
+            await Db.SaveChangesAsync();
+        }
+
+        _all?.RemoveAll(s => s.Id == seriesId);
+        _confirmingDeleteId = null;
+    }
+}

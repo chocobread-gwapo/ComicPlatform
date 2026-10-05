@@ -1,0 +1,84 @@
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using ComicPlatform.Data
+@using ComicPlatform.Models
+@using System.Security.Claims
+@inject ApplicationDbContext Db
+@inject AuthenticationStateProvider AuthProvider
+
+@if (_alreadyReported)
+{
+    <span class="report-state">Reported</span>
+}
+else if (_open)
+{
+    <span class="report-form">
+        <select @bind="_reason">
+            @foreach (var r in _reasons)
+            {
+                <option value="@r">@Label(r)</option>
+            }
+        </select>
+        <button type="button" class="report-submit" @onclick="Submit">Submit</button>
+        <button type="button" class="report-cancel" @onclick="() => _open = false">Cancel</button>
+    </span>
+}
+else
+{
+    <button type="button" class="report-toggle" @onclick="() => _open = true">Report</button>
+}
+
+@code {
+    [Parameter] public ReportTargetType TargetType { get; set; }
+    [Parameter] public int TargetId { get; set; }
+
+    private static readonly ReportReason[] _reasons = Enum.GetValues<ReportReason>();
+
+    private bool _open;
+    private bool _alreadyReported;
+    private ReportReason _reason = ReportReason.Spam;
+
+    private static string Label(ReportReason r) => r switch
+    {
+        ReportReason.Spam => "Spam",
+        ReportReason.HarassmentOrHate => "Harassment or hate speech",
+        ReportReason.Spoilers => "Spoilers",
+        ReportReason.Copyright => "Copyright / stolen content",
+        ReportReason.Inappropriate => "Inappropriate content",
+        _ => "Other"
+    };
+
+    private async Task Submit()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        var userId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (userId is null)
+        {
+            return;
+        }
+
+        var alreadyPending = await Db.Reports.AnyAsync(r =>
+            r.ReporterId == userId &&
+            r.Status == ReportStatus.Pending &&
+            ((TargetType == ReportTargetType.Comment && r.CommentId == TargetId) ||
+             (TargetType == ReportTargetType.Series && r.SeriesId == TargetId)));
+
+        if (!alreadyPending)
+        {
+            Db.Reports.Add(new Report
+            {
+                TargetType = TargetType,
+                CommentId = TargetType == ReportTargetType.Comment ? TargetId : null,
+                SeriesId = TargetType == ReportTargetType.Series ? TargetId : null,
+                ReporterId = userId,
+                Reason = _reason
+            });
+
+            await Db.SaveChangesAsync();
+        }
+
+        _open = false;
+        _alreadyReported = true;
+    }
+}

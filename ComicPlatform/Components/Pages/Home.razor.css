@@ -1,0 +1,38 @@
+.home { max-width: 880px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+section { margin-bottom: 2.25rem; }
+.sec-head h2 { font-family: 'Fraunces', serif; font-size: 1.25rem; margin: 0 0 .75rem; }
+
+/* pills */
+.pills { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem; }
+.pill { font: inherit; font-size: .8rem; padding: .35rem .9rem; cursor: pointer;
+    background: var(--paper, #fff); color: var(--ink, #111); border: 2px solid var(--ink, #111); border-radius: 0; }
+.pill.on { background: var(--ink, #111); color: var(--paper, #fff); }
+.pill:focus-visible { outline: 3px solid currentColor; outline-offset: 2px; }
+
+/* horizontal carousel: 5 visible on desktop, swipe/scroll for the rest */
+.row { display: grid; grid-auto-flow: column; grid-auto-columns: calc((100% - 4 * .9rem) / 5);
+    gap: .9rem; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: .5rem; scrollbar-width: thin; }
+.row.small { grid-auto-columns: calc((100% - 5 * .9rem) / 6); }
+.card { scroll-snap-align: start; text-decoration: none; color: inherit; min-width: 0; position: relative; }
+.cover { position: relative; aspect-ratio: 162 / 211; border: 2px solid var(--ink, #111); background: var(--paper-2, #eee); overflow: hidden; }
+.cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.title { font-size: .85rem; font-weight: 600; margin-top: .35rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sub { font-size: .72rem; opacity: .65; }
+.card:hover .title { text-decoration: underline; }
+
+/* big rank number sitting on the cover's bottom-left corner */
+.ranked .rank { display: block; position: relative; margin-top: -2.3rem; margin-left: .2rem;
+    font-family: 'Fraunces', serif; font-weight: 900; font-size: 3.4rem; line-height: 1;
+    color: var(--ink, #111); -webkit-text-stroke: 4px var(--paper, #fff); paint-order: stroke fill; pointer-events: none; }
+.ranked .title, .ranked .sub { padding-left: .1rem; }
+
+.new { position: absolute; left: 0; top: 0; background: var(--ink, #111); color: var(--paper, #fff);
+    font-size: .65rem; font-weight: 700; padding: .15rem .4rem; }
+
+.banner { display: block; margin-bottom: 2.25rem; padding: 1.1rem 1.25rem; text-decoration: none;
+    border: 2px solid var(--ink, #111); background: var(--ink, #111); color: var(--paper, #fff); text-align: center; }
+.banner:hover { text-decoration: underline; }
+
+@media (max-width: 720px) {
+    .row, .row.small { grid-auto-columns: 38%; }
+}

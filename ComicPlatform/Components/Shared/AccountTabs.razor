@@ -1,0 +1,51 @@
+@using Microsoft.AspNetCore.Components.Web
+
+<div class="account-tabs-wrap">
+    <nav class="account-tabs" aria-label="Your account">
+        <NavLink href="subscriptions">Subscriptions</NavLink>
+        <NavLink href="following">Following</NavLink>
+        <NavLink href="my-comments">Comments</NavLink>
+        <NavLink href="Account/Manage" Match="NavLinkMatch.Prefix">Account</NavLink>
+    </nav>
+</div>
+
+<style>
+    .account-tabs-wrap {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 1.5rem 1rem 0;
+        font-family: 'Public Sans', sans-serif;
+    }
+
+    .account-tabs {
+        display: flex;
+        gap: 0.5rem;
+        border-bottom: 3px solid var(--ink);
+    }
+
+    .account-tabs a {
+        display: inline-block;
+        padding: 0.6rem 1rem;
+        margin-bottom: -3px;
+        font-family: 'Fraunces', serif;
+        font-weight: 600;
+        font-size: 0.95rem;
+        text-decoration: none;
+        color: var(--muted-text);
+        border-bottom: 3px solid transparent;
+    }
+
+    .account-tabs a:hover {
+        color: var(--ink);
+    }
+
+    .account-tabs a.active {
+        color: var(--ink);
+        border-color: var(--accent);
+    }
+
+    .account-tabs a:focus-visible {
+        outline: 3px solid var(--accent);
+        outline-offset: 2px;
+    }
+</style>

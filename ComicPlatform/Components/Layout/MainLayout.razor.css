@@ -1,0 +1,27 @@
+.page { min-height: 100vh; display: flex; flex-direction: column; }
+
+.topbar { position: sticky; top: 0; z-index: 100; background: var(--paper); border-bottom: 2px solid var(--ink); }
+
+main { flex: 1; }
+
+.site-footer { display: flex; flex-direction: column; align-items: center; gap: 0.6rem; padding: 2rem 1rem;
+    border-top: 2px solid var(--ink); background: var(--paper); color: var(--muted-text); font-size: 0.85rem; }
+.site-footer .brand { display: inline-flex; align-items: center; gap: 0.45rem; font-family: 'Fraunces', serif; font-weight: 900; font-size: 1.25rem; color: var(--ink); text-decoration: none; }
+.site-footer nav { display: flex; gap: 1.25rem; }
+.site-footer nav a { color: var(--ink); text-decoration: none; }
+.site-footer nav a:hover { text-decoration: underline; }
+
+#blazor-error-ui {
+    color-scheme: light only;
+    background: lightyellow;
+    bottom: 0;
+    box-sizing: border-box;
+    display: none;
+    left: 0;
+    padding: 0.6rem 1.25rem 0.7rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+}
+
+#blazor-error-ui .dismiss { cursor: pointer; position: absolute; right: 0.75rem; top: 0.5rem; }
