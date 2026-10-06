@@ -36,6 +36,14 @@ public class Series
     public string CreatorId { get; set; } = string.Empty;
     public ApplicationUser Creator { get; set; } = null!;
 
+    // Optional: one of the genres below, designated as the primary one. Separate
+    // relationship from the Genres collection, not a member of it automatically —
+    // picking a Main Genre doesn't add it to Genres, and it must be configured
+    // explicitly in ApplicationDbContext since EF can't infer which of the two
+    // Series-to-Genre relationships this is.
+    public int? MainGenreId { get; set; }
+    public Genre? MainGenre { get; set; }
+
     public ICollection<Chapter> Chapters { get; set; } = new List<Chapter>();
     public ICollection<Genre> Genres { get; set; } = new List<Genre>();
     public ICollection<Tag> Tags { get; set; } = new List<Tag>();

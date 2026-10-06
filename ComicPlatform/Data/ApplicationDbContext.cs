@@ -33,6 +33,16 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             .HasForeignKey(s => s.CreatorId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.Entity<Tag>()
+            .HasIndex(t => t.Name)
+            .IsUnique();
+
+        builder.Entity<Series>()
+            .HasOne(s => s.MainGenre)
+            .WithMany()
+            .HasForeignKey(s => s.MainGenreId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         builder.Entity<Follow>()
             .HasKey(f => new { f.UserId, f.SeriesId });
 

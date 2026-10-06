@@ -4,6 +4,7 @@ using ComicPlatform.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ComicPlatform.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261006064708_TagsFollowUp")]
+    partial class TagsFollowUp
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -340,9 +343,6 @@ namespace ComicPlatform.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(450)");
 
-                    b.Property<int?>("MainGenreId")
-                        .HasColumnType("int");
-
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
@@ -361,8 +361,6 @@ namespace ComicPlatform.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CreatorId");
-
-                    b.HasIndex("MainGenreId");
 
                     b.ToTable("Series");
                 });
@@ -728,14 +726,7 @@ namespace ComicPlatform.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("ComicPlatform.Models.Genre", "MainGenre")
-                        .WithMany()
-                        .HasForeignKey("MainGenreId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.Navigation("Creator");
-
-                    b.Navigation("MainGenre");
                 });
 
             modelBuilder.Entity("ComicPlatform.Models.SeriesAuthor", b =>

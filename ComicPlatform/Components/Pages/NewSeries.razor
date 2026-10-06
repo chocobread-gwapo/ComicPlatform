@@ -8,6 +8,7 @@
 @using Microsoft.EntityFrameworkCore
 @using ComicPlatform.Data
 @using ComicPlatform.Models
+@using ComicPlatform.Components.Shared
 @using System.ComponentModel.DataAnnotations
 @using System.Security.Claims
 @inject ApplicationDbContext Db
@@ -51,17 +52,14 @@
 
         <div class="field">
             <label>Genres</label>
-            <div class="genre-checkboxes">
-                @foreach (var genre in _allGenres)
-                {
-                    <label class="genre-checkbox">
-                        <input type="checkbox"
-                               checked="@_selectedGenreIds.Contains(genre.Id)"
-                               @onchange="@((e) => ToggleGenre(genre.Id, (bool)e.Value!))" />
-                        @genre.Name
-                    </label>
-                }
-            </div>
+            <GenrePicker AllGenres="_allGenres"
+                         @bind-SelectedGenreIds="_selectedGenreIds"
+                         @bind-MainGenreId="_mainGenreId" />
+        </div>
+
+        <div class="field">
+            <label>Tags <span class="optional">(Optional)</span></label>
+            <TagInput @bind-Tags="_tagNames" />
         </div>
 
         <div class="field">
@@ -113,6 +111,12 @@
         font-weight: 600;
     }
 
+    .field label .optional {
+        font-weight: normal;
+        color: var(--muted-text);
+        font-size: 0.85em;
+    }
+
     .field input[type="text"], .field textarea, .field select {
         width: 100%;
         padding: 0.6rem;
@@ -121,23 +125,6 @@
         background: var(--panel-bg);
         color: var(--ink);
         box-sizing: border-box;
-    }
-
-    .genre-checkboxes {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.5rem;
-    }
-
-    .genre-checkbox {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.4rem;
-        border: 1.5px solid var(--ink);
-        padding: 0.3rem 0.7rem;
-        cursor: pointer;
-        font-size: 0.9rem;
-        font-weight: normal;
     }
 
     .cover-preview {
@@ -176,24 +163,14 @@
     private readonly SeriesFormModel _model = new();
     private List<Genre> _allGenres = new();
     private HashSet<int> _selectedGenreIds = new();
+    private int? _mainGenreId;
+    private List<string> _tagNames = new();
     private string? _newCoverUrl;
     private string? _uploadError;
 
     protected override async Task OnInitializedAsync()
     {
         _allGenres = await Db.Genres.OrderBy(g => g.Name).ToListAsync();
-    }
-
-    private void ToggleGenre(int genreId, bool isSelected)
-    {
-        if (isSelected)
-        {
-            _selectedGenreIds.Add(genreId);
-        }
-        else
-        {
-            _selectedGenreIds.Remove(genreId);
-        }
     }
 
     private async Task OnCoverFileSelected(InputFileChangeEventArgs e)
@@ -247,12 +224,24 @@
             Synopsis = _model.Synopsis,
             Status = _model.Status,
             CoverImageUrl = _newCoverUrl,
-            CreatorId = userId
+            CreatorId = userId,
+            MainGenreId = _mainGenreId
         };
 
         foreach (var genre in selectedGenres)
         {
             series.Genres.Add(genre);
+        }
+
+        var lowerTagNames = _tagNames.Select(n => n.ToLower()).ToList();
+        var existingTags = await Db.Tags
+            .Where(t => lowerTagNames.Contains(t.Name.ToLower()))
+            .ToListAsync();
+
+        foreach (var name in _tagNames)
+        {
+            var match = existingTags.FirstOrDefault(t => t.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            series.Tags.Add(match ?? new Tag { Name = name });
         }
 
         Db.Series.Add(series);

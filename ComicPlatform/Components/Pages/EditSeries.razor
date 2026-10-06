@@ -9,6 +9,7 @@
 @using Microsoft.EntityFrameworkCore
 @using ComicPlatform.Data
 @using ComicPlatform.Models
+@using ComicPlatform.Components.Shared
 @using System.ComponentModel.DataAnnotations
 @using System.Security.Claims
 @inject ApplicationDbContext Db
@@ -63,17 +64,14 @@
 
             <div class="field">
                 <label>Genres</label>
-                <div class="genre-checkboxes">
-                    @foreach (var genre in _allGenres)
-                    {
-                        <label class="genre-checkbox">
-                            <input type="checkbox"
-                                   checked="@_selectedGenreIds.Contains(genre.Id)"
-                                   @onchange="@((e) => ToggleGenre(genre.Id, (bool)e.Value!))" />
-                            @genre.Name
-                        </label>
-                    }
-                </div>
+                <GenrePicker AllGenres="_allGenres"
+                             @bind-SelectedGenreIds="_selectedGenreIds"
+                             @bind-MainGenreId="_mainGenreId" />
+            </div>
+
+            <div class="field">
+                <label>Tags <span class="optional">(Optional)</span></label>
+                <TagInput @bind-Tags="_tagNames" />
             </div>
 
             <div class="field">
@@ -171,6 +169,12 @@
         font-weight: 600;
     }
 
+    .field label .optional {
+        font-weight: normal;
+        color: var(--muted-text);
+        font-size: 0.85em;
+    }
+
     .field input[type="text"], .field textarea, .field select {
         width: 100%;
         padding: 0.6rem;
@@ -179,23 +183,6 @@
         background: var(--panel-bg);
         color: var(--ink);
         box-sizing: border-box;
-    }
-
-    .genre-checkboxes {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.5rem;
-    }
-
-    .genre-checkbox {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.4rem;
-        border: 1.5px solid var(--ink);
-        padding: 0.3rem 0.7rem;
-        cursor: pointer;
-        font-size: 0.9rem;
-        font-weight: normal;
     }
 
     .cover-preview {
@@ -302,6 +289,8 @@
     private readonly SeriesFormModel _model = new();
     private List<Genre> _allGenres = new();
     private HashSet<int> _selectedGenreIds = new();
+    private int? _mainGenreId;
+    private List<string> _tagNames = new();
     private List<AuthorDisplay> _authors = new();
     private string _newAuthorEmail = string.Empty;
     private string? _addAuthorError;
@@ -315,6 +304,7 @@
 
         var series = await Db.Series
             .Include(s => s.Genres)
+            .Include(s => s.Tags)
             .FirstOrDefaultAsync(s => s.Id == SeriesId);
 
         if (series is not null)
@@ -329,6 +319,8 @@
                 _model.Synopsis = series.Synopsis;
                 _model.Status = series.Status;
                 _selectedGenreIds = series.Genres.Select(g => g.Id).ToHashSet();
+                _mainGenreId = series.MainGenreId;
+                _tagNames = series.Tags.Select(t => t.Name).ToList();
 
                 var seriesAuthors = await Db.SeriesAuthors
                     .Include(sa => sa.User)
@@ -404,18 +396,6 @@
         _authors.RemoveAll(a => a.UserId == userId);
     }
 
-    private void ToggleGenre(int genreId, bool isSelected)
-    {
-        if (isSelected)
-        {
-            _selectedGenreIds.Add(genreId);
-        }
-        else
-        {
-            _selectedGenreIds.Remove(genreId);
-        }
-    }
-
     private async Task OnCoverFileSelected(InputFileChangeEventArgs e)
     {
         var file = e.File;
@@ -472,6 +452,20 @@
         foreach (var genre in selectedGenres)
         {
             _series.Genres.Add(genre);
+        }
+
+        _series.MainGenreId = _mainGenreId;
+
+        var lowerTagNames = _tagNames.Select(n => n.ToLower()).ToList();
+        var existingTags = await Db.Tags
+            .Where(t => lowerTagNames.Contains(t.Name.ToLower()))
+            .ToListAsync();
+
+        _series.Tags.Clear();
+        foreach (var name in _tagNames)
+        {
+            var match = existingTags.FirstOrDefault(t => t.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            _series.Tags.Add(match ?? new Tag { Name = name });
         }
 
         await Db.SaveChangesAsync();

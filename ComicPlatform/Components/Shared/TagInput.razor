@@ -1,0 +1,111 @@
+@using Microsoft.AspNetCore.Components.Web
+
+<div class="tag-input">
+    <p class="tag-hint">Up to @MaxTags tags.</p>
+
+    @if (Tags.Count > 0)
+    {
+        <div class="tag-chips">
+            @foreach (var tag in Tags)
+            {
+                <span class="tag-chip">
+                    @tag
+                    <button type="button" class="tag-remove" @onclick="() => RemoveTag(tag)" aria-label="Remove @tag">&times;</button>
+                </span>
+            }
+        </div>
+    }
+
+    @if (Tags.Count < MaxTags)
+    {
+        <input type="text"
+               class="tag-text-input"
+               placeholder="Press 'Enter' after each tag."
+               @bind="_draft" @bind:event="oninput"
+               @onkeydown="HandleKeyDown"
+               @onkeydown:preventDefault="_preventDefault"
+               maxlength="@MaxTagLength" />
+        <div class="tag-counter">@_draft.Length/@MaxTagLength</div>
+    }
+    else
+    {
+        <p class="tag-limit-note">Max @MaxTags tags reached — remove one to add another.</p>
+    }
+</div>
+
+<style>
+    .tag-input { font-family: 'Public Sans', sans-serif; }
+    .tag-hint { margin: 0 0 0.5rem; font-size: 0.8rem; color: var(--muted-text); }
+
+    .tag-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.5rem; }
+    .tag-chip {
+        display: inline-flex; align-items: center; gap: 0.35rem;
+        border: 1.5px solid var(--ink); background: var(--panel-bg);
+        padding: 0.25rem 0.5rem; font-size: 0.85rem; color: var(--ink);
+    }
+    .tag-remove {
+        background: none; border: none; cursor: pointer;
+        font-size: 1rem; line-height: 1; padding: 0; color: var(--muted-text);
+    }
+    .tag-remove:hover { color: var(--danger); }
+    .tag-remove:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+    .tag-text-input {
+        width: 100%; padding: 0.6rem; border: 1.5px solid var(--ink);
+        background: var(--panel-bg); color: var(--ink); box-sizing: border-box;
+        font-family: 'Public Sans', sans-serif;
+    }
+    .tag-text-input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+    .tag-counter { text-align: right; font-size: 0.75rem; color: var(--muted-text); margin-top: 0.25rem; }
+    .tag-limit-note { margin: 0; font-size: 0.85rem; color: var(--muted-text); }
+</style>
+
+@code {
+    [Parameter] public List<string> Tags { get; set; } = new();
+    [Parameter] public EventCallback<List<string>> TagsChanged { get; set; }
+    [Parameter] public int MaxTags { get; set; } = 10;
+    [Parameter] public int MaxTagLength { get; set; } = 50;
+
+    private string _draft = string.Empty;
+    private bool _preventDefault;
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        _preventDefault = e.Key == "Enter";
+
+        if (e.Key != "Enter")
+        {
+            return;
+        }
+
+        var value = _draft.Trim();
+
+        if (value.Length > MaxTagLength)
+        {
+            value = value[..MaxTagLength];
+        }
+
+        if (string.IsNullOrEmpty(value) || Tags.Count >= MaxTags)
+        {
+            _draft = string.Empty;
+            return;
+        }
+
+        if (Tags.Any(t => string.Equals(t, value, StringComparison.OrdinalIgnoreCase)))
+        {
+            _draft = string.Empty;
+            return;
+        }
+
+        Tags.Add(value);
+        _draft = string.Empty;
+        await TagsChanged.InvokeAsync(Tags);
+    }
+
+    private async Task RemoveTag(string tag)
+    {
+        Tags.Remove(tag);
+        await TagsChanged.InvokeAsync(Tags);
+    }
+}

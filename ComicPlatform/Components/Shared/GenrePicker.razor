@@ -1,0 +1,95 @@
+@using ComicPlatform.Models
+
+<div class="genre-picker">
+    <p class="genre-hint">Select up to @MaxGenres genres.</p>
+
+    <div class="genre-pills">
+        @foreach (var genre in AllGenres)
+        {
+            var isSelected = SelectedGenreIds.Contains(genre.Id);
+            var isDisabled = !isSelected && SelectedGenreIds.Count >= MaxGenres;
+            <button type="button"
+                    class="genre-pill @(isSelected ? "on" : "") @(isDisabled ? "disabled" : "")"
+                    disabled="@isDisabled"
+                    @onclick="() => Toggle(genre.Id)">
+                @genre.Name
+            </button>
+        }
+    </div>
+
+    <div class="main-genre-field">
+        <label for="main-genre-select">Main genre</label>
+        <select id="main-genre-select" value="@(MainGenreId?.ToString() ?? "")" @onchange="OnMainGenreChanged">
+            <option value="">None</option>
+            @foreach (var genre in AllGenres.Where(g => SelectedGenreIds.Contains(g.Id)))
+            {
+                <option value="@genre.Id">@genre.Name</option>
+            }
+        </select>
+    </div>
+</div>
+
+<style>
+    .genre-picker { font-family: 'Public Sans', sans-serif; }
+    .genre-hint { margin: 0 0 0.6rem; font-size: 0.8rem; color: var(--muted-text); }
+
+    .genre-pills { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
+    .genre-pill {
+        font: inherit; font-size: 0.8rem; font-weight: 600; padding: 0.35rem 0.85rem;
+        cursor: pointer; background: transparent; color: var(--ink); border: 1.5px solid var(--ink);
+    }
+    .genre-pill:hover:not(.disabled) { background: var(--panel-bg); }
+    .genre-pill.on { background: var(--ink); color: var(--paper); }
+    .genre-pill.disabled { opacity: 0.4; cursor: not-allowed; }
+    .genre-pill:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+    .main-genre-field label { display: block; margin-bottom: 0.35rem; font-weight: 600; font-size: 0.9rem; }
+    .main-genre-field select {
+        width: 100%; max-width: 280px; padding: 0.55rem 0.6rem; border: 1.5px solid var(--ink);
+        background: var(--panel-bg); color: var(--ink); font-family: 'Public Sans', sans-serif; font-size: 0.9rem;
+    }
+    .main-genre-field select:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+</style>
+
+@code {
+    [Parameter] public List<Genre> AllGenres { get; set; } = new();
+    [Parameter] public HashSet<int> SelectedGenreIds { get; set; } = new();
+    [Parameter] public EventCallback<HashSet<int>> SelectedGenreIdsChanged { get; set; }
+    [Parameter] public int? MainGenreId { get; set; }
+    [Parameter] public EventCallback<int?> MainGenreIdChanged { get; set; }
+    [Parameter] public int MaxGenres { get; set; } = 3;
+
+    private async Task Toggle(int genreId)
+    {
+        if (SelectedGenreIds.Contains(genreId))
+        {
+            SelectedGenreIds.Remove(genreId);
+
+            // Main Genre must be one of the selected genres — clear it if its
+            // genre just got deselected.
+            if (MainGenreId == genreId)
+            {
+                MainGenreId = null;
+                await MainGenreIdChanged.InvokeAsync(MainGenreId);
+            }
+        }
+        else
+        {
+            if (SelectedGenreIds.Count >= MaxGenres)
+            {
+                return;
+            }
+
+            SelectedGenreIds.Add(genreId);
+        }
+
+        await SelectedGenreIdsChanged.InvokeAsync(SelectedGenreIds);
+    }
+
+    private async Task OnMainGenreChanged(ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString();
+        MainGenreId = string.IsNullOrEmpty(raw) ? null : int.Parse(raw);
+        await MainGenreIdChanged.InvokeAsync(MainGenreId);
+    }
+}

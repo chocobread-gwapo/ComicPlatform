@@ -27,11 +27,12 @@
     }
     else
     {
-        <input type="search" class="search" placeholder="Search by title..." @oninput="OnSearch" />
+        <input type="search" class="search" placeholder="Search by title or tag..." @oninput="OnSearch" />
 
         @if (!string.IsNullOrWhiteSpace(_query))
         {
-            var hits = _all.Where(s => s.Title.Contains(_query, StringComparison.OrdinalIgnoreCase)).ToList();
+            var hits = _all.Where(s => s.Title.Contains(_query, StringComparison.OrdinalIgnoreCase)
+                || s.Tags.Any(t => t.Contains(_query, StringComparison.OrdinalIgnoreCase))).ToList();
             <section>
                 <h2>Results</h2>
                 @if (hits.Count == 0) { <p class="note">No series match your search.</p> }
@@ -198,7 +199,7 @@
 </style>
 
 @code {
-    private sealed record Card(int Id, string Title, string? Cover, List<string> Genres, bool Completed,
+    private sealed record Card(int Id, string Title, string? Cover, List<string> Genres, List<string> Tags, bool Completed,
         int Views, int Likes, DateTime? FirstPublished, DateTime? LastPublished);
 
     private static readonly string[] _days = { "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" };
@@ -248,6 +249,7 @@
                 s.Title,
                 s.CoverImageUrl,
                 Genres = s.Genres.Select(g => g.Name).ToList(),
+                Tags = s.Tags.Select(t => t.Name).ToList(),
                 Completed = s.Status == SeriesStatus.Completed,
                 Views = s.Chapters.Sum(c => c.ViewCount),
                 Likes = db.Likes.Count(l => l.Chapter.SeriesId == s.Id),
@@ -256,7 +258,7 @@
             })
             .ToListAsync();
 
-        _all = rows.Select(r => new Card(r.Id, r.Title, r.CoverImageUrl, r.Genres, r.Completed, r.Views, r.Likes, r.First, r.Last)).ToList();
+        _all = rows.Select(r => new Card(r.Id, r.Title, r.CoverImageUrl, r.Genres, r.Tags, r.Completed, r.Views, r.Likes, r.First, r.Last)).ToList();
         _genres = _all.SelectMany(s => s.Genres).Distinct().OrderBy(g => g).ToList();
         _genreTab = _genres.FirstOrDefault() ?? "";
         _loaded = true;

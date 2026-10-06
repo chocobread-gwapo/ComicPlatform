@@ -17,10 +17,10 @@ builder.Services.AddScoped<IdentityRedirectManager>();
 builder.Services.AddScoped<AuthenticationStateProvider, IdentityRevalidatingAuthenticationStateProvider>();
 
 builder.Services.AddAuthentication(options =>
-    {
-        options.DefaultScheme = IdentityConstants.ApplicationScheme;
-        options.DefaultSignInScheme = IdentityConstants.ExternalScheme;
-    })
+{
+    options.DefaultScheme = IdentityConstants.ApplicationScheme;
+    options.DefaultSignInScheme = IdentityConstants.ExternalScheme;
+})
     .AddIdentityCookies();
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
@@ -35,10 +35,10 @@ builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
 builder.Services.AddIdentityCore<ApplicationUser>(options =>
-    {
-        options.SignIn.RequireConfirmedAccount = true;
-        options.Stores.SchemaVersion = IdentitySchemaVersions.Version3;
-    })
+{
+    options.SignIn.RequireConfirmedAccount = true;
+    options.Stores.SchemaVersion = IdentitySchemaVersions.Version3;
+})
     .AddRoles<IdentityRole>()
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddSignInManager()
@@ -59,22 +59,27 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-    if (!db.Genres.Any())
+    // Per-name check instead of "only if the table is empty" — this way adding a
+    // new name to this list and restarting is enough to bring it into an existing
+    // database too, not just a brand-new one.
+    var genreNames = new[]
     {
-        db.Genres.AddRange(
-            new Genre { Name = "Action" },
-            new Genre { Name = "Romance" },
-            new Genre { Name = "Comedy" },
-            new Genre { Name = "Fantasy" },
-            new Genre { Name = "Drama" },
-            new Genre { Name = "Horror" },
-            new Genre { Name = "Sci-Fi" },
-            new Genre { Name = "Slice of Life" },
-            new Genre { Name = "Thriller" },
-            new Genre { Name = "Mystery" }
-        );
-        await db.SaveChangesAsync();
+        "Action", "Romance", "Comedy", "Fantasy", "Drama", "Horror", "Sci-Fi",
+        "Slice of Life", "Thriller", "Mystery",
+        "Romance Fantasy", "Action Fantasy", "BL", "GL", "LGBTQ+", "Gaming"
+    };
+
+    var existingGenreNames = db.Genres.Select(g => g.Name).ToHashSet();
+
+    foreach (var name in genreNames)
+    {
+        if (!existingGenreNames.Contains(name))
+        {
+            db.Genres.Add(new Genre { Name = name });
+        }
     }
+
+    await db.SaveChangesAsync();
 }
 
 using (var scope = app.Services.CreateScope())

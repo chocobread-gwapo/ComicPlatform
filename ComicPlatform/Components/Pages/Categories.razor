@@ -3,6 +3,7 @@
 @using ComicPlatform.Data
 @using ComicPlatform.Models
 @inject ApplicationDbContext Db
+@inject NavigationManager Nav
 
 <PageTitle>Categories - Catkoom</PageTitle>
 
@@ -17,7 +18,16 @@
         <h1>Categories</h1>
     </div>
 
-    @if (_genres.Count == 0)
+    @if (_activeTag is not null)
+    {
+        <div class="active-tag-row">
+            <span class="active-tag-chip">
+                #@_activeTag
+                <button type="button" class="clear-tag" @onclick="ClearTag" aria-label="Clear tag filter">&times;</button>
+            </span>
+        </div>
+    }
+    else if (_genres.Count == 0)
     {
         <p class="loading">@(_genresLoaded ? "No genres yet." : "Loading...")</p>
     }
@@ -38,51 +48,55 @@
                 <button class="pill small @(_matchAll ? "on" : "")" @onclick="() => SetMatchMode(true)">All selected</button>
             </div>
         }
+    }
 
-        @if (!_loaded)
-        {
-            <p class="loading">Loading...</p>
-        }
-        else if (_selectedGenres.Count == 0)
-        {
-            <p class="empty">Pick at least one genre.</p>
-        }
-        else if (_items.Count == 0)
-        {
-            <p class="empty">No series match this filter.</p>
-        }
-        else
-        {
-            <div class="row-head">
-                <span class="count">@_items.Count series</span>
-                <div class="pills sort">
-                    <button class="pill @(!_sortByNewest ? "on" : "")" @onclick="() => _sortByNewest = false">Popular</button>
-                    <button class="pill @(_sortByNewest ? "on" : "")" @onclick="() => _sortByNewest = true">Newest</button>
-                </div>
+    @if (_activeTag is null && _genres.Count == 0)
+    {
+        @* genre list still loading / empty — nothing more to show yet *@
+    }
+    else if (!_loaded)
+    {
+        <p class="loading">Loading...</p>
+    }
+    else if (_activeTag is null && _selectedGenres.Count == 0)
+    {
+        <p class="empty">Pick at least one genre.</p>
+    }
+    else if (_items.Count == 0)
+    {
+        <p class="empty">@(_activeTag is not null ? $"No series tagged #{_activeTag}." : "No series match this filter.")</p>
+    }
+    else
+    {
+        <div class="row-head">
+            <span class="count">@_items.Count series</span>
+            <div class="pills sort">
+                <button class="pill @(!_sortByNewest ? "on" : "")" @onclick="() => _sortByNewest = false">Popular</button>
+                <button class="pill @(_sortByNewest ? "on" : "")" @onclick="() => _sortByNewest = true">Newest</button>
             </div>
+        </div>
 
-            <div class="grid">
-                @foreach (var s in Sorted)
-                {
-                    <a class="panel" href="@($"/series/{s.Id}")">
-                        <div class="cover">
-                            @if (!string.IsNullOrEmpty(s.Cover))
-                            {
-                                <img src="@s.Cover" alt="@s.Title" loading="lazy" />
-                            }
-                            else
-                            {
-                                <div class="cover-placeholder">@s.Title</div>
-                            }
-                        </div>
-                        <div class="panel-info">
-                            <h2>@s.Title</h2>
-                            <span class="sub">@Compact(s.Views) views</span>
-                        </div>
-                    </a>
-                }
-            </div>
-        }
+        <div class="grid">
+            @foreach (var s in Sorted)
+            {
+                <a class="panel" href="@($"/series/{s.Id}")">
+                    <div class="cover">
+                        @if (!string.IsNullOrEmpty(s.Cover))
+                        {
+                            <img src="@s.Cover" alt="@s.Title" loading="lazy" />
+                        }
+                        else
+                        {
+                            <div class="cover-placeholder">@s.Title</div>
+                        }
+                    </div>
+                    <div class="panel-info">
+                        <h2>@s.Title</h2>
+                        <span class="sub">@Compact(s.Views) views</span>
+                    </div>
+                </a>
+            }
+        </div>
     }
 </div>
 
@@ -91,6 +105,13 @@
 
     .page-head { margin-bottom: 1.25rem; padding-bottom: 1rem; border-bottom: 3px solid var(--ink); }
     .page-head h1 { font-family: 'Fraunces', serif; font-weight: 900; font-size: clamp(1.5rem, 4vw, 2rem); margin: 0; }
+
+    .active-tag-row { margin-bottom: 1.5rem; }
+    .active-tag-chip { display: inline-flex; align-items: center; gap: 0.5rem; border: 1.5px solid var(--ink);
+        background: var(--ink); color: var(--paper); padding: 0.4rem 0.9rem; font-size: 0.85rem; font-weight: 600; }
+    .clear-tag { background: none; border: none; color: var(--paper); cursor: pointer; font-size: 1.1rem; line-height: 1; padding: 0; }
+    .clear-tag:hover { opacity: 0.7; }
+    .clear-tag:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
     .pills { display: flex; gap: 0.5rem; flex-wrap: wrap; }
     .genre-pills { margin-bottom: 1.5rem; }
@@ -127,6 +148,9 @@
 @code {
     private sealed record Card(int Id, string Title, string? Cover, int Views, DateTime? FirstPublished);
 
+    [SupplyParameterFromQuery(Name = "tag")]
+    public string? TagQuery { get; set; }
+
     private List<string> _genres = new();
     private bool _genresLoaded;
     private HashSet<string> _selectedGenres = new();
@@ -134,6 +158,7 @@
     private List<Card> _items = new();
     private bool _sortByNewest;
     private bool _loaded;
+    private string? _activeTag;
 
     private IEnumerable<Card> Sorted => _sortByNewest
         ? _items.OrderByDescending(i => i.FirstPublished)
@@ -147,13 +172,28 @@
     {
         _genres = await Db.Genres.OrderBy(g => g.Name).Select(g => g.Name).ToListAsync();
         _genresLoaded = true;
+    }
 
-        if (_genres.Count > 0)
+    protected override async Task OnParametersSetAsync()
+    {
+        _activeTag = string.IsNullOrWhiteSpace(TagQuery) ? null : TagQuery;
+
+        if (_activeTag is not null)
         {
-            _selectedGenres.Add(_genres[0]);
-            await LoadGenres();
+            await LoadTag(_activeTag);
+        }
+        else
+        {
+            _selectedGenres.Clear();
+            if (_genres.Count > 0)
+            {
+                _selectedGenres.Add(_genres[0]);
+                await LoadGenres();
+            }
         }
     }
+
+    private void ClearTag() => Nav.NavigateTo("/categories");
 
     private async Task ToggleGenre(string g)
     {
@@ -192,6 +232,30 @@
             : query.Where(s => s.Genres.Any(g => selected.Contains(g.Name)));
 
         var rows = await query
+            .Select(s => new
+            {
+                s.Id,
+                s.Title,
+                s.CoverImageUrl,
+                Views = s.Chapters.Sum(c => c.ViewCount),
+                First = s.Chapters.Where(c => !c.IsDraft && c.PublishedAt <= now).Min(c => (DateTime?)c.PublishedAt)
+            })
+            .ToListAsync();
+
+        _items = rows.Select(r => new Card(r.Id, r.Title, r.CoverImageUrl, r.Views, r.First)).ToList();
+        _loaded = true;
+    }
+
+    private async Task LoadTag(string tagName)
+    {
+        _loaded = false;
+
+        var now = DateTime.UtcNow;
+        var lowerTag = tagName.ToLower();
+
+        var rows = await Db.Series
+            .Where(s => s.Chapters.Any(c => !c.IsDraft && c.PublishedAt <= now))
+            .Where(s => s.Tags.Any(t => t.Name.ToLower() == lowerTag))
             .Select(s => new
             {
                 s.Id,
