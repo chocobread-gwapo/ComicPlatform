@@ -1,19 +1,29 @@
 html, body {
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-family: 'Public Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 
 a, .btn-link {
-    color: #006bb7;
+    color: var(--accent, #006bb7);
 }
 
 .btn-primary {
-    color: #fff;
-    background-color: #1b6ec2;
-    border-color: #1861ac;
+    color: var(--paper, #fff);
+    background-color: var(--ink, #1b6ec2);
+    border-color: var(--ink, #1861ac);
+    border-radius: 0;
+    box-shadow: none;
 }
 
+    .btn-primary:hover,
+    .btn-primary:focus {
+        color: var(--paper, #fff);
+        background-color: var(--ink, #1861ac);
+        border-color: var(--ink, #1861ac);
+        opacity: 0.85;
+    }
+
 .btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus {
-  box-shadow: 0 0 0 0.1rem white, 0 0 0 0.25rem #258cfb;
+    box-shadow: 0 0 0 0.1rem white, 0 0 0 0.25rem #258cfb;
 }
 
 .content {
@@ -120,7 +130,32 @@ body {
     background-color: var(--panel-bg);
     color: var(--ink);
     border-color: var(--ink);
+    border-radius: 0;
+    box-shadow: none;
 }
+
+    .form-control:disabled, .form-control[readonly] {
+        background-color: var(--hatch);
+        color: var(--muted-text);
+        border-color: var(--border-soft);
+        opacity: 1;
+    }
+
+    .form-control::file-selector-button,
+    .form-control::-webkit-file-upload-button {
+        background-color: var(--ink);
+        color: var(--paper);
+        border: none;
+        border-radius: 0;
+        padding: 0.375rem 0.75rem;
+        margin-right: 0.75rem;
+        cursor: pointer;
+    }
+
+        .form-control::file-selector-button:hover,
+        .form-control::-webkit-file-upload-button:hover {
+            opacity: 0.85;
+        }
 
     .form-control:focus, .form-select:focus {
         background-color: var(--panel-bg);

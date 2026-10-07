@@ -3,7 +3,13 @@
 
 @inject SignInManager<ApplicationUser> SignInManager
 
-<ul class="nav nav-pills flex-column">
+<HeadContent>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+</HeadContent>
+
+<ul class="nav manage-nav flex-column">
     <li class="nav-item">
         <NavLink class="nav-link" href="Account/Manage" Match="NavLinkMatch.All">Profile</NavLink>
     </li>
@@ -29,6 +35,41 @@
         <NavLink class="nav-link" href="Account/Manage/PersonalData">Personal data</NavLink>
     </li>
 </ul>
+
+<style>
+    .manage-nav {
+        font-family: 'Public Sans', sans-serif;
+        border: 1.5px solid var(--ink);
+        background: var(--panel-bg);
+    }
+
+    .manage-nav .nav-item + .nav-item {
+        border-top: 1px solid var(--border-soft);
+    }
+
+    .manage-nav .nav-link {
+        display: block;
+        padding: 0.65rem 1rem;
+        color: var(--ink);
+        font-weight: 600;
+        font-size: 0.9rem;
+        border-radius: 0;
+    }
+
+    .manage-nav .nav-link:hover {
+        background: var(--hatch);
+    }
+
+    .manage-nav .nav-link.active {
+        background: var(--ink);
+        color: var(--paper);
+    }
+
+    .manage-nav .nav-link:focus-visible {
+        outline: 3px solid var(--accent);
+        outline-offset: -3px;
+    }
+</style>
 
 @code {
     private bool hasExternalLogins;

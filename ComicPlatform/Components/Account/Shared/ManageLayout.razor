@@ -1,9 +1,8 @@
 ﻿@inherits LayoutComponentBase
 @layout ComicPlatform.Components.Layout.MainLayout
 
-<h1>Manage your account</h1>
-
-<div>
+<div class="manage-shell">
+    <h1>Manage your account</h1>
     <h2>Change your account settings</h2>
     <hr />
     <div class="row">
@@ -15,3 +14,35 @@
         </div>
     </div>
 </div>
+
+<style>
+    .manage-shell {
+        font-family: 'Public Sans', sans-serif;
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 1.5rem 1rem 4rem;
+    }
+
+    .manage-shell h1 {
+        font-family: 'Fraunces', serif;
+        font-weight: 900;
+        font-size: clamp(1.5rem, 4vw, 2rem);
+        margin: 0 0 0.35rem;
+        color: var(--ink);
+    }
+
+    .manage-shell h2 {
+        font-family: 'Public Sans', sans-serif;
+        font-weight: normal;
+        font-size: 0.95rem;
+        color: var(--muted-text);
+        margin: 0;
+    }
+
+    .manage-shell hr {
+        border: none;
+        border-top: 3px solid var(--ink);
+        margin: 1rem 0 1.5rem;
+        opacity: 1;
+    }
+</style>
