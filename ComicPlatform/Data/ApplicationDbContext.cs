@@ -19,6 +19,9 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Comment> Comments { get; set; }
     public DbSet<Follow> Follows { get; set; }
     public DbSet<CreatorFollow> CreatorFollows { get; set; }
+    public DbSet<CreatorPost> CreatorPosts { get; set; }
+    public DbSet<CreatorPostComment> CreatorPostComments { get; set; }
+    public DbSet<CreatorPostLike> CreatorPostLikes { get; set; }
     public DbSet<Like> Likes { get; set; }
     public DbSet<SeriesAuthor> SeriesAuthors { get; set; }
     public DbSet<Report> Reports { get; set; }
@@ -70,6 +73,37 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             .HasOne(c => c.ParentComment)
             .WithMany(c => c.Replies)
             .HasForeignKey(c => c.ParentCommentId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Entity<CreatorPost>()
+            .HasOne(cp => cp.Creator)
+            .WithMany()
+            .HasForeignKey(cp => cp.CreatorId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Same reasoning as CreatorFollow above: direct FKs to ApplicationUser stay
+        // Restrict. CreatorPostComment.CreatorPostId and CreatorPostLike.CreatorPostId
+        // are left on EF's default cascade — deleting a post should take its own
+        // comments and likes with it, same as Chapter -> Comment isn't overridden either.
+        builder.Entity<CreatorPostComment>()
+            .HasOne(c => c.User)
+            .WithMany()
+            .HasForeignKey(c => c.UserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Entity<CreatorPostComment>()
+            .HasOne(c => c.ParentComment)
+            .WithMany(c => c.Replies)
+            .HasForeignKey(c => c.ParentCommentId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Entity<CreatorPostLike>()
+            .HasKey(l => new { l.UserId, l.CreatorPostId });
+
+        builder.Entity<CreatorPostLike>()
+            .HasOne(l => l.User)
+            .WithMany()
+            .HasForeignKey(l => l.UserId)
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.Entity<Like>()

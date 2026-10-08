@@ -177,6 +177,69 @@ public class CreatorFollow
 }
 
 /// <summary>
+/// An update a creator posts to their own profile feed — separate from a Chapter,
+/// not tied to any one Series.
+/// </summary>
+public class CreatorPost
+{
+    public int Id { get; set; }
+
+    public string CreatorId { get; set; } = string.Empty;
+    public ApplicationUser Creator { get; set; } = null!;
+
+    [Required, MaxLength(2000)]
+    public string Content { get; set; } = string.Empty;
+
+    public string? ImageUrl { get; set; }
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    public ICollection<CreatorPostComment> Comments { get; set; } = new List<CreatorPostComment>();
+    public ICollection<CreatorPostLike> Likes { get; set; } = new List<CreatorPostLike>();
+}
+
+/// <summary>
+/// A reader reply on a CreatorPost. Same single-level threading as Comment
+/// (a reply can't itself be replied to) — kept as its own entity rather than
+/// extending Comment, since Comment is Chapter-specific elsewhere in the app
+/// and reporting isn't wired up for this yet, same as chapters aren't reportable.
+/// </summary>
+public class CreatorPostComment
+{
+    public int Id { get; set; }
+
+    public int CreatorPostId { get; set; }
+    public CreatorPost CreatorPost { get; set; } = null!;
+
+    public string UserId { get; set; } = string.Empty;
+    public ApplicationUser User { get; set; } = null!;
+
+    [Required, MaxLength(2000)]
+    public string Content { get; set; } = string.Empty;
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    public int? ParentCommentId { get; set; }
+    public CreatorPostComment? ParentComment { get; set; }
+    public ICollection<CreatorPostComment> Replies { get; set; } = new List<CreatorPostComment>();
+}
+
+/// <summary>
+/// Join entity: which readers liked which creator post. Composite key (UserId, CreatorPostId).
+/// Simple on/off like, same as the existing Chapter Like — not a multi-reaction picker.
+/// </summary>
+public class CreatorPostLike
+{
+    public string UserId { get; set; } = string.Empty;
+    public ApplicationUser User { get; set; } = null!;
+
+    public int CreatorPostId { get; set; }
+    public CreatorPost CreatorPost { get; set; } = null!;
+
+    public DateTime LikedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
 /// Join entity: which readers liked which chapter. Composite key (UserId, ChapterId).
 /// </summary>
 public class Like
