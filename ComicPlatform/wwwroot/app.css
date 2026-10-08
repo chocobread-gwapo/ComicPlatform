@@ -166,11 +166,6 @@ label, .form-label {
     color: var(--ink);
 }
 
-.form-floating > label {
-    background-color: var(--panel-bg);
-    padding: 0 0.3rem;
-}
-
 .input-group-text {
     background-color: var(--panel-bg);
     color: var(--ink);
