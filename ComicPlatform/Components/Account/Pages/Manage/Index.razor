@@ -54,6 +54,31 @@
                 <label for="username" class="form-label">Username</label>
             </div>
             <div class="form-floating mb-3">
+                <InputTextArea @bind-Value="Input.Bio" id="Input.Bio" class="form-control" placeholder="Tell readers about yourself" style="height: 100px" maxlength="500" />
+                <label for="Input.Bio" class="form-label">Bio</label>
+                <ValidationMessage For="() => Input.Bio" class="text-danger" />
+            </div>
+            <div class="form-floating mb-3">
+                <InputText @bind-Value="Input.InstagramUrl" id="Input.InstagramUrl" class="form-control" placeholder="https://instagram.com/you" />
+                <label for="Input.InstagramUrl" class="form-label">Instagram URL</label>
+                <ValidationMessage For="() => Input.InstagramUrl" class="text-danger" />
+            </div>
+            <div class="form-floating mb-3">
+                <InputText @bind-Value="Input.TwitterUrl" id="Input.TwitterUrl" class="form-control" placeholder="https://twitter.com/you" />
+                <label for="Input.TwitterUrl" class="form-label">Twitter URL</label>
+                <ValidationMessage For="() => Input.TwitterUrl" class="text-danger" />
+            </div>
+            <div class="form-floating mb-3">
+                <InputText @bind-Value="Input.PatreonUrl" id="Input.PatreonUrl" class="form-control" placeholder="https://patreon.com/you" />
+                <label for="Input.PatreonUrl" class="form-label">Patreon URL</label>
+                <ValidationMessage For="() => Input.PatreonUrl" class="text-danger" />
+            </div>
+            <div class="form-floating mb-3">
+                <InputText @bind-Value="Input.WebsiteUrl" id="Input.WebsiteUrl" class="form-control" placeholder="https://yoursite.com" />
+                <label for="Input.WebsiteUrl" class="form-label">Website URL</label>
+                <ValidationMessage For="() => Input.WebsiteUrl" class="text-danger" />
+            </div>
+            <div class="form-floating mb-3">
                 <InputText @bind-Value="Input.PhoneNumber" id="Input.PhoneNumber" class="form-control" placeholder="Enter your phone number" />
                 <label for="Input.PhoneNumber" class="form-label">Phone number</label>
                 <ValidationMessage For="() => Input.PhoneNumber" class="text-danger" />
@@ -101,6 +126,11 @@
         phoneNumber = await UserManager.GetPhoneNumberAsync(user);
 
         Input.PhoneNumber ??= phoneNumber;
+        Input.Bio ??= user.Bio;
+        Input.InstagramUrl ??= user.InstagramUrl;
+        Input.TwitterUrl ??= user.TwitterUrl;
+        Input.PatreonUrl ??= user.PatreonUrl;
+        Input.WebsiteUrl ??= user.WebsiteUrl;
     }
 
     private const long MaxAvatarBytes = 2 * 1024 * 1024;
@@ -239,6 +269,19 @@
             }
         }
 
+        user.Bio = string.IsNullOrWhiteSpace(Input.Bio) ? null : Input.Bio.Trim();
+        user.InstagramUrl = string.IsNullOrWhiteSpace(Input.InstagramUrl) ? null : Input.InstagramUrl.Trim();
+        user.TwitterUrl = string.IsNullOrWhiteSpace(Input.TwitterUrl) ? null : Input.TwitterUrl.Trim();
+        user.PatreonUrl = string.IsNullOrWhiteSpace(Input.PatreonUrl) ? null : Input.PatreonUrl.Trim();
+        user.WebsiteUrl = string.IsNullOrWhiteSpace(Input.WebsiteUrl) ? null : Input.WebsiteUrl.Trim();
+
+        var updateResult = await UserManager.UpdateAsync(user);
+        if (!updateResult.Succeeded)
+        {
+            RedirectManager.RedirectToCurrentPageWithStatus("Error: Failed to update your profile.", HttpContext);
+            return;
+        }
+
         await SignInManager.RefreshSignInAsync(user);
         RedirectManager.RedirectToCurrentPageWithStatus("Your profile has been updated", HttpContext);
     }
@@ -248,5 +291,25 @@
         [Phone]
         [Display(Name = "Phone number")]
         public string? PhoneNumber { get; set; }
+
+        [MaxLength(500)]
+        [Display(Name = "Bio")]
+        public string? Bio { get; set; }
+
+        [Url]
+        [Display(Name = "Instagram URL")]
+        public string? InstagramUrl { get; set; }
+
+        [Url]
+        [Display(Name = "Twitter URL")]
+        public string? TwitterUrl { get; set; }
+
+        [Url]
+        [Display(Name = "Patreon URL")]
+        public string? PatreonUrl { get; set; }
+
+        [Url]
+        [Display(Name = "Website URL")]
+        public string? WebsiteUrl { get; set; }
     }
 }

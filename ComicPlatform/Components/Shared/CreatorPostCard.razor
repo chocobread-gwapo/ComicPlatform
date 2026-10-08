@@ -1,0 +1,226 @@
+@using ComicPlatform.Data
+@using ComicPlatform.Models
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Web
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+
+<div class="post-card">
+    <div class="post-head">
+        <span class="post-date">@Post.CreatedAt.ToString("MMM d, yyyy")</span>
+        @if (CanManage)
+        {
+            <button type="button" class="post-delete" @onclick="DeletePost">Delete</button>
+        }
+    </div>
+
+    <p class="post-content">@Post.Content</p>
+
+    @if (!string.IsNullOrEmpty(Post.ImageUrl))
+    {
+        <img class="post-image" src="@Post.ImageUrl" alt="" loading="lazy" />
+    }
+
+    <div class="post-actions">
+        <button type="button" class="post-like @(Post.IsLikedByMe ? "on" : "")" @onclick="ToggleLike" disabled="@(CurrentUserId is null)">
+            &#9825; @Post.LikeCount
+        </button>
+        <span class="post-comment-count">@Post.Replies.Count repl@(Post.Replies.Count == 1 ? "y" : "ies")</span>
+    </div>
+
+    @if (Post.Replies.Count > 0)
+    {
+        <div class="post-replies">
+            @foreach (var reply in Post.Replies)
+            {
+                <div class="reply">
+                    @if (!string.IsNullOrEmpty(reply.UserAvatarUrl))
+                    {
+                        <img class="reply-avatar" src="@reply.UserAvatarUrl" alt="" />
+                    }
+                    else
+                    {
+                        <span class="reply-avatar reply-avatar-placeholder">@InitialOf(reply.UserDisplayName)</span>
+                    }
+                    <div class="reply-body">
+                        <span class="reply-meta">
+                            <span class="reply-name">@reply.UserDisplayName</span>
+                            <span class="reply-date">@reply.CreatedAt.ToString("MMM d")</span>
+                        </span>
+                        <p class="reply-content">@reply.Content</p>
+                    </div>
+                    @if (CurrentUserId == reply.UserId)
+                    {
+                        <button type="button" class="reply-delete" @onclick="() => DeleteReply(reply)" aria-label="Delete reply">&times;</button>
+                    }
+                </div>
+            }
+        </div>
+    }
+
+    @if (CurrentUserId is not null)
+    {
+        <div class="reply-composer">
+            <input type="text"
+                   placeholder="Write a reply..."
+                   @bind="_draftReply" @bind:event="oninput"
+                   @onkeydown="HandleReplyKeyDown"
+                   @onkeydown:preventDefault="_preventDefault"
+                   maxlength="2000" />
+            <button type="button" class="reply-submit" @onclick="SubmitReply" disabled="@string.IsNullOrWhiteSpace(_draftReply)">Reply</button>
+        </div>
+    }
+</div>
+
+<style>
+    .post-card { border: 1.5px solid var(--border-soft); padding: 1rem; margin-bottom: 1rem; font-family: 'Public Sans', sans-serif; }
+    .post-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+    .post-date { font-size: 0.8rem; color: var(--muted-text); }
+    .post-delete { background: none; border: none; color: var(--muted-text); font-size: 0.75rem; cursor: pointer; text-decoration: underline; padding: 0; }
+    .post-delete:hover { color: var(--danger); }
+    .post-content { margin: 0 0 0.75rem; line-height: 1.5; white-space: pre-wrap; color: var(--ink); }
+    .post-image { max-width: 100%; border: 1.5px solid var(--ink); margin-bottom: 0.75rem; display: block; }
+
+    .post-actions { display: flex; gap: 1rem; align-items: center; margin-bottom: 0.75rem; }
+    .post-like { background: none; border: 1.5px solid var(--border-soft); padding: 0.3rem 0.7rem; font-size: 0.85rem; cursor: pointer; color: var(--ink); }
+    .post-like.on { border-color: var(--danger); color: var(--danger); }
+    .post-like:disabled { cursor: not-allowed; opacity: 0.5; }
+    .post-like:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+    .post-comment-count { font-size: 0.8rem; color: var(--muted-text); }
+
+    .post-replies { border-top: 1px solid var(--border-soft); padding-top: 0.75rem; margin-bottom: 0.75rem; display: flex; flex-direction: column; gap: 0.6rem; }
+    .reply { display: flex; gap: 0.6rem; align-items: flex-start; }
+    .reply-avatar { width: 28px; height: 28px; flex-shrink: 0; object-fit: cover; border: 1.5px solid var(--ink); }
+    .reply-avatar-placeholder { display: flex; align-items: center; justify-content: center; font-family: 'Fraunces', serif; font-weight: 600; font-size: 0.8rem; background: var(--hatch); color: var(--ink); }
+    .reply-body { flex: 1; min-width: 0; }
+    .reply-meta { display: flex; gap: 0.5rem; align-items: baseline; }
+    .reply-name { font-weight: 600; font-size: 0.85rem; color: var(--ink); }
+    .reply-date { font-size: 0.7rem; color: var(--muted-text); }
+    .reply-content { margin: 0.1rem 0 0; font-size: 0.9rem; line-height: 1.4; color: var(--ink); }
+    .reply-delete { background: none; border: none; color: var(--muted-text); cursor: pointer; font-size: 0.9rem; padding: 0; align-self: flex-start; }
+    .reply-delete:hover { color: var(--danger); }
+
+    .reply-composer { display: flex; gap: 0.5rem; }
+    .reply-composer input { flex: 1; padding: 0.5rem 0.6rem; border: 1.5px solid var(--border-soft); background: var(--panel-bg); color: var(--ink); font-family: 'Public Sans', sans-serif; font-size: 0.85rem; }
+    .reply-composer input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; border-color: var(--ink); }
+    .reply-submit { background: var(--ink); color: var(--paper); border: none; padding: 0.5rem 0.9rem; font-size: 0.85rem; cursor: pointer; }
+    .reply-submit:disabled { opacity: 0.4; cursor: not-allowed; }
+    .reply-submit:not(:disabled):hover { opacity: 0.85; }
+</style>
+
+@code {
+    [Parameter] public CreatorPostItem Post { get; set; } = null!;
+    [Parameter] public string? CurrentUserId { get; set; }
+    [Parameter] public bool CanManage { get; set; }
+    [Parameter] public EventCallback<CreatorPostItem> OnPostDeleted { get; set; }
+
+    private string _draftReply = string.Empty;
+    private bool _preventDefault;
+
+    private async Task ToggleLike()
+    {
+        if (CurrentUserId is null)
+        {
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        if (Post.IsLikedByMe)
+        {
+            var existing = await db.CreatorPostLikes.FindAsync(CurrentUserId, Post.Id);
+            if (existing is not null)
+            {
+                db.CreatorPostLikes.Remove(existing);
+                await db.SaveChangesAsync();
+            }
+            Post.LikeCount--;
+        }
+        else
+        {
+            db.CreatorPostLikes.Add(new CreatorPostLike { UserId = CurrentUserId, CreatorPostId = Post.Id });
+            await db.SaveChangesAsync();
+            Post.LikeCount++;
+        }
+
+        Post.IsLikedByMe = !Post.IsLikedByMe;
+    }
+
+    private async Task HandleReplyKeyDown(KeyboardEventArgs e)
+    {
+        _preventDefault = e.Key == "Enter";
+
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_draftReply))
+        {
+            await SubmitReply();
+        }
+    }
+
+    private async Task SubmitReply()
+    {
+        if (CurrentUserId is null || string.IsNullOrWhiteSpace(_draftReply))
+        {
+            return;
+        }
+
+        var content = _draftReply.Trim();
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var comment = new CreatorPostComment
+        {
+            CreatorPostId = Post.Id,
+            UserId = CurrentUserId,
+            Content = content
+        };
+        db.CreatorPostComments.Add(comment);
+        await db.SaveChangesAsync();
+
+        var user = await db.Users
+            .Where(u => u.Id == CurrentUserId)
+            .Select(u => new { u.DisplayName, u.AvatarUrl })
+            .FirstOrDefaultAsync();
+
+        Post.Replies.Add(new CreatorPostReplyItem
+        {
+            Id = comment.Id,
+            UserId = CurrentUserId,
+            UserDisplayName = user?.DisplayName ?? "?",
+            UserAvatarUrl = user?.AvatarUrl,
+            Content = content,
+            CreatedAt = comment.CreatedAt
+        });
+
+        _draftReply = string.Empty;
+    }
+
+    private async Task DeleteReply(CreatorPostReplyItem reply)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var existing = await db.CreatorPostComments.FindAsync(reply.Id);
+        if (existing is not null)
+        {
+            db.CreatorPostComments.Remove(existing);
+            await db.SaveChangesAsync();
+        }
+
+        Post.Replies.Remove(reply);
+    }
+
+    private async Task DeletePost()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var existing = await db.CreatorPosts.FindAsync(Post.Id);
+        if (existing is not null)
+        {
+            db.CreatorPosts.Remove(existing);
+            await db.SaveChangesAsync();
+        }
+
+        await OnPostDeleted.InvokeAsync(Post);
+    }
+
+    private static string InitialOf(string name) =>
+        string.IsNullOrWhiteSpace(name) ? "?" : name.Trim()[..1].ToUpperInvariant();
+}

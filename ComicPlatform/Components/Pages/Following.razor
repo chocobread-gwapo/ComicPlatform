@@ -5,7 +5,6 @@
 @using Microsoft.AspNetCore.Components.Web
 @using Microsoft.EntityFrameworkCore
 @using ComicPlatform.Data
-@using ComicPlatform.Models
 @using ComicPlatform.Components.Shared
 @using System.Security.Claims
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
@@ -43,18 +42,20 @@
             @foreach (var item in _items)
             {
                 <div class="row">
-                    @if (!string.IsNullOrEmpty(item.AvatarUrl))
-                    {
-                        <img class="avatar" src="@item.AvatarUrl" alt="" />
-                    }
-                    else
-                    {
-                        <span class="avatar avatar-placeholder">@InitialOf(item.DisplayName)</span>
-                    }
-                    <span class="meta">
-                        <span class="name">@item.DisplayName</span>
-                        <span class="sub">Series @item.SeriesCount <span class="divider">|</span> Followers @item.FollowerCount</span>
-                    </span>
+                    <a class="row-link" href="@($"/creator/{item.CreatorId}")">
+                        @if (!string.IsNullOrEmpty(item.AvatarUrl))
+                        {
+                            <img class="avatar" src="@item.AvatarUrl" alt="" />
+                        }
+                        else
+                        {
+                            <span class="avatar avatar-placeholder">@InitialOf(item.DisplayName)</span>
+                        }
+                        <span class="meta">
+                            <span class="name">@item.DisplayName</span>
+                            <span class="sub">Series @item.SeriesCount <span class="divider">|</span> Followers @item.FollowerCount</span>
+                        </span>
+                    </a>
                     <button class="unfollow" @onclick="() => Unfollow(item)">Unfollow</button>
                 </div>
             }
@@ -72,6 +73,7 @@
     .row { display: flex; align-items: center; gap: 1rem; padding: 0.85rem 0.1rem; border-bottom: 1.5px solid var(--border-soft); }
     .row:first-child { border-top: 1.5px solid var(--border-soft); }
     .row:hover { background: var(--panel-bg); }
+    .row-link { flex: 1; min-width: 0; display: flex; align-items: center; gap: 1rem; text-decoration: none; color: var(--ink); }
 
     .avatar { width: 48px; height: 48px; flex-shrink: 0; object-fit: cover; border: 2px solid var(--ink); background: var(--paper); }
     .avatar-placeholder { display: flex; align-items: center; justify-content: center;

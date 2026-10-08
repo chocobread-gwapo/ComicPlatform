@@ -1,0 +1,385 @@
+@page "/creator/{CreatorId}"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.EntityFrameworkCore
+@using ComicPlatform.Data
+@using ComicPlatform.Models
+@using ComicPlatform.Components.Shared
+@using System.Security.Claims
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject AuthenticationStateProvider AuthProvider
+
+<PageTitle>catkoom - @(_creator?.DisplayName ?? "Creator")</PageTitle>
+
+<HeadContent>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+</HeadContent>
+
+@if (!_loaded)
+{
+    <p class="loading">Loading...</p>
+}
+else if (_notFound)
+{
+    <div class="not-found">
+        <p>This creator doesn't exist.</p>
+        <a href="/">Back home</a>
+    </div>
+}
+else
+{
+    <div class="creator-page">
+        <div class="creator-header">
+            @if (!string.IsNullOrEmpty(_creator!.AvatarUrl))
+            {
+                <img class="creator-avatar" src="@_creator.AvatarUrl" alt="" />
+            }
+            else
+            {
+                <span class="creator-avatar creator-avatar-placeholder">@InitialOf(_creator.DisplayName)</span>
+            }
+
+            <h1>@_creator.DisplayName</h1>
+
+            @if (!string.IsNullOrWhiteSpace(_creator.Bio))
+            {
+                <p class="creator-bio">@_creator.Bio</p>
+            }
+
+            @if (HasAnySocialLink)
+            {
+                <div class="social-links">
+                    @if (!string.IsNullOrEmpty(_creator.InstagramUrl))
+                    {
+                        <a class="social-link" href="@_creator.InstagramUrl" target="_blank" rel="noopener noreferrer">Instagram</a>
+                    }
+                    @if (!string.IsNullOrEmpty(_creator.TwitterUrl))
+                    {
+                        <a class="social-link" href="@_creator.TwitterUrl" target="_blank" rel="noopener noreferrer">Twitter</a>
+                    }
+                    @if (!string.IsNullOrEmpty(_creator.PatreonUrl))
+                    {
+                        <a class="social-link" href="@_creator.PatreonUrl" target="_blank" rel="noopener noreferrer">Patreon</a>
+                    }
+                    @if (!string.IsNullOrEmpty(_creator.WebsiteUrl))
+                    {
+                        <a class="social-link" href="@_creator.WebsiteUrl" target="_blank" rel="noopener noreferrer">Website</a>
+                    }
+                </div>
+            }
+
+            <div class="creator-stats">
+                <span><strong>@_seriesCount</strong> Series</span>
+                <span class="divider">|</span>
+                <span><strong>@_followerCount</strong> Followers</span>
+            </div>
+
+            @if (_isOwnProfile)
+            {
+                <a class="edit-profile" href="Account/Manage">Edit profile</a>
+            }
+            else if (_currentUserId is not null)
+            {
+                <button class="follow-button @(_isFollowing ? "following" : "")" @onclick="ToggleFollow">
+                    @(_isFollowing ? "Following" : "+ Follow")
+                </button>
+            }
+        </div>
+
+        @if (_series.Count > 0)
+        {
+            <div class="creator-series">
+                <h2>Series</h2>
+                <div class="series-row">
+                    @foreach (var s in _series)
+                    {
+                        <a class="series-card" href="@($"/series/{s.Id}")">
+                            <span class="series-thumb">
+                                @if (!string.IsNullOrEmpty(s.Cover))
+                                {
+                                    <img src="@s.Cover" alt="" loading="lazy" />
+                                }
+                                else
+                                {
+                                    <span class="series-thumb-placeholder">@s.Title</span>
+                                }
+                            </span>
+                            <span class="series-title">@s.Title</span>
+                        </a>
+                    }
+                </div>
+            </div>
+        }
+
+        <div class="creator-feed">
+            <h2>Feed</h2>
+
+            @if (_isOwnProfile)
+            {
+                <div class="composer">
+                    <textarea placeholder="Share something..." @bind="_draftPost" @bind:event="oninput" maxlength="2000"></textarea>
+                    <div class="composer-row">
+                        <span class="composer-count">@_draftPost.Length/2000</span>
+                        <button type="button" class="composer-submit" @onclick="SubmitPost" disabled="@string.IsNullOrWhiteSpace(_draftPost)">Post</button>
+                    </div>
+                </div>
+            }
+
+            @if (_posts.Count == 0)
+            {
+                <p class="empty">
+                    @(_isOwnProfile ? "You haven't posted anything yet." : $"{_creator.DisplayName} hasn't posted anything yet.")
+                </p>
+            }
+            else
+            {
+                @foreach (var post in _posts)
+                {
+                    <CreatorPostCard Post="post" CurrentUserId="_currentUserId" CanManage="@(_currentUserId == CreatorId)" OnPostDeleted="RemovePost" />
+                }
+            }
+        </div>
+    </div>
+}
+
+<style>
+    .loading, .not-found { font-family: 'Fraunces', serif; font-size: 1.1rem; padding: 2rem 1rem; text-align: center; }
+    .not-found a { display: inline-block; margin-top: 0.75rem; color: var(--accent); font-weight: 600; text-decoration: underline; }
+
+    .creator-page { font-family: 'Public Sans', sans-serif; color: var(--ink); max-width: 1000px; margin: 0 auto; padding: 2rem 1rem 4rem; }
+
+    .creator-header { text-align: center; max-width: 560px; margin: 0 auto 3rem; display: flex; flex-direction: column; align-items: center; }
+
+    .creator-avatar { width: 110px; height: 110px; object-fit: cover; border: 3px solid var(--ink); margin-bottom: 1rem; background: var(--paper); }
+    .creator-avatar-placeholder {
+        display: flex; align-items: center; justify-content: center;
+        font-family: 'Fraunces', serif; font-weight: 600; font-size: 2.8rem; color: var(--ink);
+        background: repeating-linear-gradient(135deg, var(--paper), var(--paper) 10px, var(--hatch) 10px, var(--hatch) 11px);
+    }
+
+    .creator-header h1 { font-family: 'Fraunces', serif; font-weight: 900; font-size: clamp(1.6rem, 4vw, 2.1rem); margin: 0 0 0.5rem; }
+    .creator-bio { color: var(--muted-text); line-height: 1.5; margin: 0 0 1rem; }
+
+    .social-links { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; margin-bottom: 1.25rem; }
+    .social-link { font-size: 0.8rem; font-weight: 600; border: 1.5px solid var(--ink); padding: 0.3rem 0.75rem; color: var(--ink); text-decoration: none; }
+    .social-link:hover { background: var(--panel-bg); }
+    .social-link:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+    .creator-stats { display: flex; gap: 0.75rem; align-items: baseline; font-size: 0.95rem; margin-bottom: 1.25rem; }
+    .creator-stats .divider { opacity: 0.4; }
+
+    .edit-profile { font-size: 0.85rem; font-weight: 600; color: var(--accent); text-decoration: underline; }
+
+    .follow-button {
+        font: inherit; font-size: 0.9rem; font-weight: 600; padding: 0.5rem 1.4rem; cursor: pointer;
+        background: var(--ink); color: var(--paper); border: 1.5px solid var(--ink);
+    }
+    .follow-button.following { background: transparent; color: var(--ink); }
+    .follow-button:hover { opacity: 0.85; }
+    .follow-button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+    .creator-series, .creator-feed { margin-bottom: 2.5rem; }
+    .creator-series h2, .creator-feed h2 {
+        font-family: 'Fraunces', serif; font-weight: 600; font-size: 1.3rem;
+        margin: 0 0 1rem; padding-bottom: 0.6rem; border-bottom: 3px solid var(--ink);
+    }
+
+    .series-row { display: flex; gap: 1rem; overflow-x: auto; padding-bottom: 0.5rem; }
+    .series-card { flex-shrink: 0; width: 120px; text-decoration: none; color: var(--ink); }
+    .series-thumb { display: block; width: 120px; aspect-ratio: 3 / 4; border: 2px solid var(--ink); background: var(--paper); overflow: hidden; margin-bottom: 0.4rem; }
+    .series-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .series-thumb-placeholder {
+        width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; text-align: center; padding: 0.3rem;
+        font-family: 'Fraunces', serif; font-weight: 600; font-size: 0.7rem; line-height: 1.2;
+        background: repeating-linear-gradient(135deg, var(--paper), var(--paper) 8px, var(--hatch) 8px, var(--hatch) 9px);
+    }
+    .series-title { font-size: 0.8rem; font-weight: 600; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .composer { border: 1.5px solid var(--ink); background: var(--panel-bg); padding: 0.85rem; margin-bottom: 1.25rem; }
+    .composer textarea {
+        width: 100%; min-height: 70px; resize: vertical; border: none; background: transparent; color: var(--ink);
+        font-family: 'Public Sans', sans-serif; font-size: 0.95rem; padding: 0; box-sizing: border-box;
+    }
+    .composer textarea:focus-visible { outline: none; }
+    .composer-row { display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem; }
+    .composer-count { font-size: 0.75rem; color: var(--muted-text); }
+    .composer-submit { background: var(--ink); color: var(--paper); border: none; padding: 0.45rem 1.1rem; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+    .composer-submit:disabled { opacity: 0.4; cursor: not-allowed; }
+    .composer-submit:not(:disabled):hover { opacity: 0.85; }
+
+    .empty { font-family: 'Fraunces', serif; font-size: 1rem; color: var(--muted-text); }
+</style>
+
+@code {
+    [Parameter] public string CreatorId { get; set; } = string.Empty;
+
+    private ApplicationUser? _creator;
+    private bool _loaded;
+    private bool _notFound;
+    private bool _isOwnProfile;
+    private bool _isFollowing;
+    private string? _currentUserId;
+    private int _seriesCount;
+    private int _followerCount;
+    private List<SeriesCard> _series = new();
+    private List<CreatorPostItem> _posts = new();
+    private string _draftPost = string.Empty;
+
+    private bool HasAnySocialLink => _creator is not null && (
+        !string.IsNullOrEmpty(_creator.InstagramUrl) ||
+        !string.IsNullOrEmpty(_creator.TwitterUrl) ||
+        !string.IsNullOrEmpty(_creator.PatreonUrl) ||
+        !string.IsNullOrEmpty(_creator.WebsiteUrl));
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loaded = false;
+        _notFound = false;
+
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        _currentUserId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        _isOwnProfile = _currentUserId == CreatorId;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        _creator = await db.Users.FirstOrDefaultAsync(u => u.Id == CreatorId);
+        if (_creator is null)
+        {
+            _notFound = true;
+            _loaded = true;
+            return;
+        }
+
+        _seriesCount = await db.Series.CountAsync(s => s.CreatorId == CreatorId);
+        _followerCount = await db.CreatorFollows.CountAsync(cf => cf.CreatorId == CreatorId);
+
+        if (_currentUserId is not null && !_isOwnProfile)
+        {
+            var follow = await db.CreatorFollows.FindAsync(_currentUserId, CreatorId);
+            _isFollowing = follow is not null;
+        }
+
+        _series = await db.Series
+            .Where(s => s.CreatorId == CreatorId)
+            .OrderByDescending(s => s.UpdatedAt)
+            .Select(s => new SeriesCard(s.Id, s.Title, s.CoverImageUrl))
+            .ToListAsync();
+
+        var currentUserId = _currentUserId;
+
+        var rawPosts = await db.CreatorPosts
+            .Where(p => p.CreatorId == CreatorId)
+            .OrderByDescending(p => p.CreatedAt)
+            .Select(p => new
+            {
+                p.Id,
+                p.Content,
+                p.ImageUrl,
+                p.CreatedAt,
+                LikeCount = p.Likes.Count,
+                IsLikedByMe = currentUserId != null && p.Likes.Any(l => l.UserId == currentUserId),
+                Replies = p.Comments
+                    .OrderBy(c => c.CreatedAt)
+                    .Select(c => new
+                    {
+                        c.Id,
+                        c.UserId,
+                        c.User.DisplayName,
+                        c.User.AvatarUrl,
+                        c.Content,
+                        c.CreatedAt
+                    })
+            })
+            .ToListAsync();
+
+        _posts = rawPosts.Select(p => new CreatorPostItem
+        {
+            Id = p.Id,
+            Content = p.Content,
+            ImageUrl = p.ImageUrl,
+            CreatedAt = p.CreatedAt,
+            LikeCount = p.LikeCount,
+            IsLikedByMe = p.IsLikedByMe,
+            Replies = p.Replies.Select(r => new CreatorPostReplyItem
+            {
+                Id = r.Id,
+                UserId = r.UserId,
+                UserDisplayName = r.DisplayName,
+                UserAvatarUrl = r.AvatarUrl,
+                Content = r.Content,
+                CreatedAt = r.CreatedAt
+            }).ToList()
+        }).ToList();
+
+        _loaded = true;
+    }
+
+    private async Task ToggleFollow()
+    {
+        if (_currentUserId is null || _isOwnProfile)
+        {
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        if (_isFollowing)
+        {
+            var existing = await db.CreatorFollows.FindAsync(_currentUserId, CreatorId);
+            if (existing is not null)
+            {
+                db.CreatorFollows.Remove(existing);
+                await db.SaveChangesAsync();
+            }
+            _followerCount--;
+        }
+        else
+        {
+            db.CreatorFollows.Add(new CreatorFollow { UserId = _currentUserId, CreatorId = CreatorId });
+            await db.SaveChangesAsync();
+            _followerCount++;
+        }
+
+        _isFollowing = !_isFollowing;
+    }
+
+    private async Task SubmitPost()
+    {
+        if (_currentUserId is null || string.IsNullOrWhiteSpace(_draftPost))
+        {
+            return;
+        }
+
+        var content = _draftPost.Trim();
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var post = new CreatorPost { CreatorId = _currentUserId, Content = content };
+        db.CreatorPosts.Add(post);
+        await db.SaveChangesAsync();
+
+        _posts.Insert(0, new CreatorPostItem
+        {
+            Id = post.Id,
+            Content = content,
+            CreatedAt = post.CreatedAt,
+            LikeCount = 0,
+            IsLikedByMe = false,
+            Replies = new()
+        });
+
+        _draftPost = string.Empty;
+    }
+
+    private void RemovePost(CreatorPostItem post)
+    {
+        _posts.Remove(post);
+    }
+
+    private static string InitialOf(string name) =>
+        string.IsNullOrWhiteSpace(name) ? "?" : name.Trim()[..1].ToUpperInvariant();
+
+    private sealed record SeriesCard(int Id, string Title, string? Cover);
+}
