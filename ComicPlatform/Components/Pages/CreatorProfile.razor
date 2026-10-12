@@ -137,7 +137,7 @@ else
             {
                 @foreach (var post in _posts)
                 {
-                    <CreatorPostCard Post="post" CurrentUserId="_currentUserId" CanManage="@(_currentUserId == CreatorId)" OnPostDeleted="RemovePost" />
+                    <CreatorPostCard Post="@post" CurrentUserId="@_currentUserId" CanManage="@(_currentUserId == CreatorId)" OnPostDeleted="@RemovePost" />
                 }
             }
         </div>
@@ -280,11 +280,12 @@ else
                 p.CreatedAt,
                 LikeCount = p.Likes.Count,
                 IsLikedByMe = currentUserId != null && p.Likes.Any(l => l.UserId == currentUserId),
-                Replies = p.Comments
+                Comments = p.Comments
                     .OrderBy(c => c.CreatedAt)
                     .Select(c => new
                     {
                         c.Id,
+                        c.ParentCommentId,
                         c.UserId,
                         c.User.DisplayName,
                         c.User.AvatarUrl,
@@ -294,23 +295,38 @@ else
             })
             .ToListAsync();
 
-        _posts = rawPosts.Select(p => new CreatorPostItem
+        _posts = rawPosts.Select(p =>
         {
-            Id = p.Id,
-            Content = p.Content,
-            ImageUrl = p.ImageUrl,
-            CreatedAt = p.CreatedAt,
-            LikeCount = p.LikeCount,
-            IsLikedByMe = p.IsLikedByMe,
-            Replies = p.Replies.Select(r => new CreatorPostReplyItem
+            var allComments = p.Comments.ToList();
+
+            // Reddit-style now: a reply can itself be replied to, to any depth —
+            // so this builds the whole tree recursively instead of stopping at
+            // one level. BuildReplies calls itself for each node's own children.
+            List<CreatorPostReplyItem> BuildReplies(int? parentId) => allComments
+                .Where(c => c.ParentCommentId == parentId)
+                .OrderBy(c => c.CreatedAt)
+                .Select(c => new CreatorPostReplyItem
+                {
+                    Id = c.Id,
+                    UserId = c.UserId,
+                    UserDisplayName = c.DisplayName,
+                    UserAvatarUrl = c.AvatarUrl,
+                    Content = c.Content,
+                    CreatedAt = c.CreatedAt,
+                    Replies = BuildReplies(c.Id)
+                })
+                .ToList();
+
+            return new CreatorPostItem
             {
-                Id = r.Id,
-                UserId = r.UserId,
-                UserDisplayName = r.DisplayName,
-                UserAvatarUrl = r.AvatarUrl,
-                Content = r.Content,
-                CreatedAt = r.CreatedAt
-            }).ToList()
+                Id = p.Id,
+                Content = p.Content,
+                ImageUrl = p.ImageUrl,
+                CreatedAt = p.CreatedAt,
+                LikeCount = p.LikeCount,
+                IsLikedByMe = p.IsLikedByMe,
+                Replies = BuildReplies(null)
+            };
         }).ToList();
 
         _loaded = true;

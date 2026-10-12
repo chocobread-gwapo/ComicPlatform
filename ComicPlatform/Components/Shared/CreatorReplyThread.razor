@@ -1,0 +1,200 @@
+@using ComicPlatform.Data
+@using ComicPlatform.Models
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Web
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+
+<div class="reply">
+    @if (!string.IsNullOrEmpty(Reply.UserAvatarUrl))
+    {
+        <img class="reply-avatar" src="@Reply.UserAvatarUrl" alt="" />
+    }
+    else
+    {
+        <span class="reply-avatar reply-avatar-placeholder">@InitialOf(Reply.UserDisplayName)</span>
+    }
+    <div class="reply-body">
+        <span class="reply-meta">
+            <span class="reply-name">@Reply.UserDisplayName</span>
+            <span class="reply-date">@Reply.CreatedAt.ToString("MMM d")</span>
+        </span>
+        <p class="reply-content">@Reply.Content</p>
+
+        <div class="reply-row">
+            @if (Reply.Replies.Count > 0)
+            {
+                <button type="button" class="reply-action" @onclick="ToggleCollapse">
+                    @(_collapsed ? $"[+] {TotalDescendantCount} repl{(TotalDescendantCount == 1 ? "y" : "ies")}" : "[-] Collapse")
+                </button>
+            }
+            @if (CurrentUserId is not null)
+            {
+                <button type="button" class="reply-action" @onclick="ToggleReplying">Reply</button>
+            }
+            @if (CurrentUserId == Reply.UserId)
+            {
+                <button type="button" class="reply-action" @onclick="DeleteThisReply">Delete</button>
+            }
+        </div>
+
+        @if (_replying)
+        {
+            <div class="nested-composer">
+                <input type="text"
+                       placeholder="@($"Reply to {Reply.UserDisplayName}...")"
+                       @bind="_draftReply" @bind:event="oninput"
+                       @onkeydown="HandleReplyKeyDown"
+                       @onkeydown:preventDefault="_preventDefault"
+                       maxlength="2000" />
+                <button type="button" class="reply-submit" @onclick="SubmitReply" disabled="@string.IsNullOrWhiteSpace(_draftReply)">Reply</button>
+                <button type="button" class="reply-cancel" @onclick="ToggleReplying">Cancel</button>
+            </div>
+        }
+
+        @if (!_collapsed && Reply.Replies.Count > 0)
+        {
+            <div class="nested-replies">
+                @foreach (var child in Reply.Replies)
+                {
+                    <CreatorReplyThread Reply="@child" CreatorPostId="@CreatorPostId" CurrentUserId="@CurrentUserId" OnDeleted="@(() => RemoveChild(child))" />
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .reply { display: flex; gap: 0.6rem; align-items: flex-start; }
+    .reply-avatar { width: 28px; height: 28px; flex-shrink: 0; object-fit: cover; border: 1.5px solid var(--ink); }
+    .reply-avatar-placeholder { display: flex; align-items: center; justify-content: center; font-family: 'Fraunces', serif; font-weight: 600; font-size: 0.8rem; background: var(--hatch); color: var(--ink); }
+    .reply-body { flex: 1; min-width: 0; }
+    .reply-meta { display: flex; gap: 0.5rem; align-items: baseline; }
+    .reply-name { font-weight: 600; font-size: 0.85rem; color: var(--ink); }
+    .reply-date { font-size: 0.7rem; color: var(--muted-text); }
+    .reply-content { margin: 0.1rem 0 0.3rem; font-size: 0.9rem; line-height: 1.4; color: var(--ink); white-space: pre-wrap; }
+
+    .reply-row { display: flex; gap: 0.75rem; }
+    .reply-action { background: none; border: none; color: var(--muted-text); cursor: pointer; font-size: 0.75rem; font-weight: 600; padding: 0; text-decoration: underline; }
+    .reply-action:hover { color: var(--ink); }
+
+    .nested-replies { margin-top: 0.6rem; padding-left: 0.9rem; border-left: 2px solid var(--border-soft); display: flex; flex-direction: column; gap: 0.75rem; }
+
+    .nested-composer { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+    .nested-composer input { flex: 1; padding: 0.5rem 0.6rem; border: 1.5px solid var(--border-soft); background: var(--panel-bg); color: var(--ink); font-family: 'Public Sans', sans-serif; font-size: 0.85rem; }
+    .nested-composer input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; border-color: var(--ink); }
+    .reply-submit { background: var(--ink); color: var(--paper); border: none; padding: 0.5rem 0.9rem; font-size: 0.85rem; cursor: pointer; }
+    .reply-submit:disabled { opacity: 0.4; cursor: not-allowed; }
+    .reply-submit:not(:disabled):hover { opacity: 0.85; }
+    .reply-cancel { background: none; border: 1.5px solid var(--border-soft); color: var(--muted-text); padding: 0.5rem 0.75rem; font-size: 0.85rem; cursor: pointer; }
+    .reply-cancel:hover { color: var(--ink); border-color: var(--ink); }
+</style>
+
+@code {
+    [Parameter] public CreatorPostReplyItem Reply { get; set; } = null!;
+    [Parameter] public int CreatorPostId { get; set; }
+    [Parameter] public string? CurrentUserId { get; set; }
+    [Parameter] public EventCallback<CreatorPostReplyItem> OnDeleted { get; set; }
+
+    private bool _collapsed;
+    private bool _replying;
+    private string _draftReply = string.Empty;
+    private bool _preventDefault;
+
+    private int TotalDescendantCount => CountDescendants(Reply);
+
+    private static int CountDescendants(CreatorPostReplyItem node) =>
+        node.Replies.Count + node.Replies.Sum(CountDescendants);
+
+    private void ToggleCollapse() => _collapsed = !_collapsed;
+
+    private void ToggleReplying()
+    {
+        _replying = !_replying;
+        _draftReply = string.Empty;
+    }
+
+    private async Task HandleReplyKeyDown(KeyboardEventArgs e)
+    {
+        _preventDefault = e.Key == "Enter";
+
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_draftReply))
+        {
+            await SubmitReply();
+        }
+    }
+
+    private async Task SubmitReply()
+    {
+        if (CurrentUserId is null || string.IsNullOrWhiteSpace(_draftReply))
+        {
+            return;
+        }
+
+        var content = _draftReply.Trim();
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var comment = new CreatorPostComment
+        {
+            CreatorPostId = CreatorPostId,
+            ParentCommentId = Reply.Id,
+            UserId = CurrentUserId,
+            Content = content
+        };
+        db.CreatorPostComments.Add(comment);
+        await db.SaveChangesAsync();
+
+        var user = await db.Users
+            .Where(u => u.Id == CurrentUserId)
+            .Select(u => new { u.DisplayName, u.AvatarUrl })
+            .FirstOrDefaultAsync();
+
+        Reply.Replies.Add(new CreatorPostReplyItem
+        {
+            Id = comment.Id,
+            UserId = CurrentUserId,
+            UserDisplayName = user?.DisplayName ?? "?",
+            UserAvatarUrl = user?.AvatarUrl,
+            Content = content,
+            CreatedAt = comment.CreatedAt
+        });
+
+        _draftReply = string.Empty;
+        _replying = false;
+    }
+
+    private async Task DeleteThisReply()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        // The whole subtree has to go first, any depth — ParentComment is
+        // Restrict, so a comment with replies pointing at it can't be deleted
+        // until those are gone.
+        var idsToDelete = new List<int>();
+        CollectDescendantIds(Reply, idsToDelete);
+        idsToDelete.Add(Reply.Id);
+
+        var comments = await db.CreatorPostComments.Where(c => idsToDelete.Contains(c.Id)).ToListAsync();
+        db.CreatorPostComments.RemoveRange(comments);
+        await db.SaveChangesAsync();
+
+        await OnDeleted.InvokeAsync(Reply);
+    }
+
+    private static void CollectDescendantIds(CreatorPostReplyItem node, List<int> ids)
+    {
+        foreach (var child in node.Replies)
+        {
+            ids.Add(child.Id);
+            CollectDescendantIds(child, ids);
+        }
+    }
+
+    private void RemoveChild(CreatorPostReplyItem child)
+    {
+        Reply.Replies.Remove(child);
+    }
+
+    private static string InitialOf(string name) =>
+        string.IsNullOrWhiteSpace(name) ? "?" : name.Trim()[..1].ToUpperInvariant();
+}

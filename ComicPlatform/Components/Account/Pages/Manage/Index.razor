@@ -4,6 +4,7 @@
 @using Microsoft.AspNetCore.Identity
 @using ComicPlatform.Data
 @using ComicPlatform.Components.Shared
+@using ComicPlatform.Components.Account
 
 @inject UserManager<ApplicationUser> UserManager
 @inject SignInManager<ApplicationUser> SignInManager
@@ -55,32 +56,32 @@
             </div>
             <div class="form-floating mb-3">
                 <InputTextArea @bind-Value="Input.Bio" id="Input.Bio" class="form-control" placeholder="Tell readers about yourself" style="height: 100px" maxlength="500" />
-                <label for="Input.Bio" class="form-label">Bio</label>
+                <label for="Input.Bio" class="form-label">Bio <span class="optional">(Optional)</span></label>
                 <ValidationMessage For="() => Input.Bio" class="text-danger" />
             </div>
             <div class="form-floating mb-3">
                 <InputText @bind-Value="Input.InstagramUrl" id="Input.InstagramUrl" class="form-control" placeholder="https://instagram.com/you" />
-                <label for="Input.InstagramUrl" class="form-label">Instagram URL</label>
+                <label for="Input.InstagramUrl" class="form-label">Instagram URL <span class="optional">(Optional)</span></label>
                 <ValidationMessage For="() => Input.InstagramUrl" class="text-danger" />
             </div>
             <div class="form-floating mb-3">
                 <InputText @bind-Value="Input.TwitterUrl" id="Input.TwitterUrl" class="form-control" placeholder="https://twitter.com/you" />
-                <label for="Input.TwitterUrl" class="form-label">Twitter URL</label>
+                <label for="Input.TwitterUrl" class="form-label">Twitter URL <span class="optional">(Optional)</span></label>
                 <ValidationMessage For="() => Input.TwitterUrl" class="text-danger" />
             </div>
             <div class="form-floating mb-3">
                 <InputText @bind-Value="Input.PatreonUrl" id="Input.PatreonUrl" class="form-control" placeholder="https://patreon.com/you" />
-                <label for="Input.PatreonUrl" class="form-label">Patreon URL</label>
+                <label for="Input.PatreonUrl" class="form-label">Patreon URL <span class="optional">(Optional)</span></label>
                 <ValidationMessage For="() => Input.PatreonUrl" class="text-danger" />
             </div>
             <div class="form-floating mb-3">
                 <InputText @bind-Value="Input.WebsiteUrl" id="Input.WebsiteUrl" class="form-control" placeholder="https://yoursite.com" />
-                <label for="Input.WebsiteUrl" class="form-label">Website URL</label>
+                <label for="Input.WebsiteUrl" class="form-label">Website URL <span class="optional">(Optional)</span></label>
                 <ValidationMessage For="() => Input.WebsiteUrl" class="text-danger" />
             </div>
             <div class="form-floating mb-3">
                 <InputText @bind-Value="Input.PhoneNumber" id="Input.PhoneNumber" class="form-control" placeholder="Enter your phone number" />
-                <label for="Input.PhoneNumber" class="form-label">Phone number</label>
+                <label for="Input.PhoneNumber" class="form-label">Phone number <span class="optional">(Optional)</span></label>
                 <ValidationMessage For="() => Input.PhoneNumber" class="text-danger" />
             </div>
             <button type="submit" class="w-100 btn btn-lg btn-primary">Save</button>
@@ -89,6 +90,7 @@
 </div>
 
 <style>
+    .form-label .optional { font-weight: normal; color: var(--muted-text); font-size: 0.85em; }
     h3, .avatar-section h4 { font-family: 'Fraunces', serif; font-weight: 600; }
     h3 { font-size: 1.8rem; margin-bottom: 1rem; }
     .avatar-section h4 { font-size: 1.1rem; margin-bottom: 0.6rem; }
@@ -288,7 +290,7 @@
 
     private sealed class InputModel
     {
-        [Phone]
+        [OptionalPhone]
         [Display(Name = "Phone number")]
         public string? PhoneNumber { get; set; }
 
@@ -296,19 +298,19 @@
         [Display(Name = "Bio")]
         public string? Bio { get; set; }
 
-        [Url]
+        [OptionalUrl]
         [Display(Name = "Instagram URL")]
         public string? InstagramUrl { get; set; }
 
-        [Url]
+        [OptionalUrl]
         [Display(Name = "Twitter URL")]
         public string? TwitterUrl { get; set; }
 
-        [Url]
+        [OptionalUrl]
         [Display(Name = "Patreon URL")]
         public string? PatreonUrl { get; set; }
 
-        [Url]
+        [OptionalUrl]
         [Display(Name = "Website URL")]
         public string? WebsiteUrl { get; set; }
     }

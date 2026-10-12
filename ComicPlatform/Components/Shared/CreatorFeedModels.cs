@@ -22,4 +22,8 @@ public class CreatorPostReplyItem
     public string? UserAvatarUrl { get; set; }
     public string Content { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
+
+    // Only ever populated one level deep, mirroring Comment's existing
+    // single-level threading — a nested reply's own Replies stays empty.
+    public List<CreatorPostReplyItem> Replies { get; set; } = new();
 }
