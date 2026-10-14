@@ -68,7 +68,11 @@
     .post-like:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
     .post-comment-count { font-size: 0.8rem; color: var(--muted-text); }
 
-    .post-replies { border-top: 1px solid var(--border-soft); padding-top: 0.75rem; margin-bottom: 0.75rem; display: flex; flex-direction: column; gap: 0.75rem; }
+    .post-replies {
+        border-top: 1px solid var(--border-soft); padding-top: 0.75rem; margin-bottom: 0.75rem;
+        padding-left: 0.9rem; border-left: 2px solid var(--border-soft);
+        display: flex; flex-direction: column; gap: 0.75rem;
+    }
 
     .reply-composer { display: flex; gap: 0.5rem; }
     .reply-composer input { flex: 1; padding: 0.5rem 0.6rem; border: 1.5px solid var(--border-soft); background: var(--panel-bg); color: var(--ink); font-family: 'Public Sans', sans-serif; font-size: 0.85rem; }
