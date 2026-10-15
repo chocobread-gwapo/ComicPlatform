@@ -130,6 +130,49 @@
             return;
         }
 
+        // Not linked to any account yet. If an account already exists with the same
+        // email the provider gave us, link this login to it and sign straight in,
+        // rather than always falling through to "create a brand-new account" (the
+        // stock behavior here, and the reason "username already taken" showed up
+        // whenever that email already belonged to someone).
+        var email = externalLoginInfo.Principal.FindFirstValue(ClaimTypes.Email);
+
+        if (!string.IsNullOrEmpty(email))
+        {
+            // Only auto-link when the provider itself vouches the email is verified —
+            // otherwise anyone could claim someone else's email and get linked into
+            // their account. Google always sends this claim; if a provider doesn't,
+            // this safely falls through to the normal "create an account" flow below
+            // instead of linking.
+            var emailVerifiedClaim = externalLoginInfo.Principal.FindFirst("email_verified");
+            var isEmailVerified = emailVerifiedClaim is not null
+                && bool.TryParse(emailVerifiedClaim.Value, out var verified)
+                && verified;
+
+            if (isEmailVerified)
+            {
+                var existingUser = await UserManager.FindByEmailAsync(email);
+                if (existingUser is not null)
+                {
+                    var linkResult = await UserManager.AddLoginAsync(existingUser, externalLoginInfo);
+                    if (linkResult.Succeeded)
+                    {
+                        Logger.LogInformation(
+                            "Linked {LoginProvider} login to existing account for {Email}.",
+                            externalLoginInfo.LoginProvider,
+                            email);
+                        await SignInManager.SignInAsync(existingUser, isPersistent: false, externalLoginInfo.LoginProvider);
+                        RedirectManager.RedirectTo(ReturnUrl);
+                        return;
+                    }
+
+                    // Linking failed for some reason (rare) — fall through to the
+                    // normal registration flow rather than risk signing in to the
+                    // wrong account.
+                }
+            }
+        }
+
         // If the user does not have an account, then ask the user to create an account.
         if (externalLoginInfo.Principal.HasClaim(c => c.Type == ClaimTypes.Email))
         {

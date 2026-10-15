@@ -2,8 +2,9 @@ using ComicPlatform.Components;
 using ComicPlatform.Components.Account;
 using ComicPlatform.Data;
 using ComicPlatform.Models;
-using Microsoft.AspNetCore.Authentication.Google;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Facebook;
+using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -34,6 +35,10 @@ if (!string.IsNullOrEmpty(googleClientId) && !string.IsNullOrEmpty(googleClientS
     {
         options.ClientId = googleClientId;
         options.ClientSecret = googleClientSecret;
+        // Not one of the handler's default claims, even though Google's own
+        // response includes it — ExternalLogin.razor's account-linking check
+        // needs this to actually find anything.
+        options.ClaimActions.MapJsonKey("email_verified", "email_verified", System.Security.Claims.ClaimValueTypes.Boolean);
     });
 }
 
