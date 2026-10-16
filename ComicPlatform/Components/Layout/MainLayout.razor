@@ -105,6 +105,7 @@
 
 @code {
     private const string ChooseUsernamePath = "/account/chooseusername";
+    private const string ChooseBirthdayPath = "/account/choosebirthday";
 
     protected override async Task OnInitializedAsync()
     {
@@ -116,29 +117,42 @@
             return;
         }
 
-        // Fast path: once the DisplayName claim exists (every account created
-        // after the username feature, or anyone who's completed this gate once)
-        // this returns immediately with no DB hit at all.
-        if (!string.IsNullOrWhiteSpace(principal.FindFirstValue("DisplayName")))
+        // Fast path: once both claims exist (every account that has completed these
+        // two gates) this returns immediately with no DB hit at all.
+        if (!string.IsNullOrWhiteSpace(principal.FindFirstValue("DisplayName"))
+            && !string.IsNullOrWhiteSpace(principal.FindFirstValue("BirthDate")))
         {
             return;
         }
 
         var currentPath = new Uri(Nav.Uri).AbsolutePath.TrimEnd('/');
-        if (currentPath.Equals(ChooseUsernamePath, StringComparison.OrdinalIgnoreCase))
+        if (currentPath.Equals(ChooseUsernamePath, StringComparison.OrdinalIgnoreCase)
+            || currentPath.Equals(ChooseBirthdayPath, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
 
         var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
-        var displayName = await Db.Users
+        var profile = await Db.Users
             .Where(u => u.Id == userId)
-            .Select(u => u.DisplayName)
+            .Select(u => new { u.DisplayName, u.BirthDate })
             .FirstOrDefaultAsync();
 
-        if (string.IsNullOrWhiteSpace(displayName))
+        if (profile is null)
+        {
+            return;
+        }
+
+        // Username first, then birthday.
+        if (string.IsNullOrWhiteSpace(profile.DisplayName))
         {
             Nav.NavigateTo("/Account/ChooseUsername");
+            return;
+        }
+
+        if (profile.BirthDate is null)
+        {
+            Nav.NavigateTo("/Account/ChooseBirthday");
         }
     }
 }

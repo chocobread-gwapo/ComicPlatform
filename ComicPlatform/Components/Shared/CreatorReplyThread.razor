@@ -35,6 +35,10 @@
             {
                 <button type="button" class="reply-action" @onclick="DeleteThisReply">Delete</button>
             }
+            @if (CurrentUserId is not null && CurrentUserId != Reply.UserId)
+            {
+                <ReportButton TargetType="ReportTargetType.CreatorPostComment" TargetId="@Reply.Id" />
+            }
         </div>
 
         @if (_replying)
@@ -73,7 +77,7 @@
     .reply-date { font-size: 0.7rem; color: var(--muted-text); }
     .reply-content { margin: 0.1rem 0 0.3rem; font-size: 0.9rem; line-height: 1.4; color: var(--ink); white-space: pre-wrap; }
 
-    .reply-row { display: flex; gap: 0.75rem; }
+    .reply-row { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: baseline; }
     .reply-action { background: none; border: none; color: var(--muted-text); cursor: pointer; font-size: 0.75rem; font-weight: 600; padding: 0; text-decoration: underline; }
     .reply-action:hover { color: var(--ink); }
 
@@ -173,6 +177,9 @@
         var idsToDelete = new List<int>();
         CollectDescendantIds(Reply, idsToDelete);
         idsToDelete.Add(Reply.Id);
+
+        // Reports on any of these replies have to be detached first too (Restrict).
+        await ReportCleanup.DetachForCreatorPostCommentsAsync(db, idsToDelete);
 
         var comments = await db.CreatorPostComments.Where(c => idsToDelete.Contains(c.Id)).ToListAsync();
         db.CreatorPostComments.RemoveRange(comments);

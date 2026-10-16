@@ -45,12 +45,25 @@
                 <div class="report-row">
                     <div class="report-main">
                         <div class="report-top">
-                            <span class="target-type">@report.TargetType</span>
+                            <span class="target-type">@TargetLabel(report.TargetType)</span>
                             <span class="reason">@Label(report.Reason)</span>
                             <span class="date">@report.CreatedAt.ToString("MMM d, yyyy")</span>
                         </div>
-                        <p class="preview">@Preview(report)</p>
-                        <span class="reporter">Reported by @report.Reporter.DisplayName</span>
+                        <p class="preview">
+                            @if (report.TargetType == ReportTargetType.Creator && report.ReportedCreator is not null)
+                            {
+                                <a href="@CreatorUrl(report.ReportedCreator.Id)">@report.ReportedCreator.DisplayName</a>
+                            }
+                            else
+                            {
+                                @Preview(report)
+                            }
+                        </p>
+                        @if (!string.IsNullOrWhiteSpace(report.Details))
+                        {
+                            <p class="details"><span class="details-label">Reason for reporting:</span>@report.Details</p>
+                        }
+                        <span class="reporter">Reported by <a href="@CreatorUrl(report.ReporterId)">@report.Reporter.DisplayName</a></span>
                     </div>
 
                     <div class="report-actions">
@@ -61,7 +74,15 @@
 
                         @if (report.Status == ReportStatus.Pending)
                         {
-                            @if (_confirmingRemoveId == report.Id)
+                            @if (report.TargetType == ReportTargetType.Creator)
+                            {
+                                @* A profile can't be "removed" like content. Ban from the Users
+                                   screen first if that's the outcome, then resolve here. *@
+                                <a href="/admin/users">Users</a>
+                                <button type="button" class="dismiss-btn" @onclick="() => Dismiss(report)">Dismiss</button>
+                                <button type="button" class="resolve-btn" @onclick="() => ResolveCreator(report)">Mark resolved</button>
+                            }
+                            else if (_confirmingRemoveId == report.Id)
                             {
                                 <span class="confirm-delete">
                                     Remove content?
@@ -193,7 +214,31 @@
         overflow-wrap: break-word;
     }
 
+    .preview a { color: var(--ink); text-decoration: underline; }
+    .preview a:hover { color: var(--accent); }
+
+    /* The reporter's own written explanation */
+    .details {
+        margin: 0.4rem 0 0.5rem;
+        font-size: 0.9rem;
+        max-width: 60ch;
+        white-space: pre-wrap;
+        overflow-wrap: break-word;
+    }
+
+    .details-label {
+        display: block;
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: var(--muted-text);
+        margin-bottom: 0.1rem;
+    }
+
     .reporter { font-size: 0.85rem; color: var(--accent); }
+    .reporter a { color: var(--accent); font-weight: 600; text-decoration: underline; }
+    .reporter a:hover { color: var(--ink); }
 
     .report-actions {
         display: flex;
@@ -212,7 +257,7 @@
 
     .report-actions > a:hover { color: var(--accent); }
 
-    .dismiss-btn, .remove-btn {
+    .dismiss-btn, .remove-btn, .resolve-btn {
         font-size: 0.85rem;
         font-weight: 600;
         padding: 0.3rem 0.7rem;
@@ -222,7 +267,7 @@
         color: var(--ink);
     }
 
-    .dismiss-btn:hover { background: var(--panel-bg); }
+    .dismiss-btn:hover, .resolve-btn:hover { background: var(--panel-bg); }
 
     .remove-btn { border-color: var(--danger); color: var(--danger); }
     .remove-btn:hover { background: var(--danger); color: var(--paper); }
@@ -284,6 +329,9 @@
             .Include(r => r.Reporter)
             .Include(r => r.Comment!).ThenInclude(c => c.Chapter)
             .Include(r => r.Series)
+            .Include(r => r.CreatorPost)
+            .Include(r => r.CreatorPostComment!).ThenInclude(c => c.CreatorPost)
+            .Include(r => r.ReportedCreator)
             .OrderByDescending(r => r.CreatedAt)
             .ToListAsync();
 
@@ -302,20 +350,33 @@
         _ => "Other"
     };
 
-    private static string Preview(Report r)
+    private static string TargetLabel(ReportTargetType t) => t switch
     {
-        if (r.TargetType == ReportTargetType.Comment)
-        {
-            if (r.Comment is null)
-            {
-                return "[comment already removed]";
-            }
+        ReportTargetType.Comment => "Comment",
+        ReportTargetType.Series => "Series",
+        ReportTargetType.CreatorPost => "Post",
+        ReportTargetType.CreatorPostComment => "Post reply",
+        ReportTargetType.Creator => "Creator",
+        _ => t.ToString()
+    };
 
-            return r.Comment.Content.Length > 160 ? r.Comment.Content[..160] + "…" : r.Comment.Content;
-        }
+    private static string Snippet(string text) => text.Length > 160 ? text[..160] + "…" : text;
 
-        return r.Series?.Title ?? "[series already removed]";
-    }
+    private static string Preview(Report r) => r.TargetType switch
+    {
+        ReportTargetType.Comment =>
+            r.Comment is null ? "[comment already removed]" : Snippet(r.Comment.Content),
+        ReportTargetType.CreatorPost =>
+            r.CreatorPost is null ? "[post already removed]" : Snippet(r.CreatorPost.Content),
+        ReportTargetType.CreatorPostComment =>
+            r.CreatorPostComment is null ? "[reply already removed]" : Snippet(r.CreatorPostComment.Content),
+        ReportTargetType.Creator =>
+            r.ReportedCreator?.DisplayName ?? "[creator not found]",
+        _ => r.Series?.Title ?? "[series already removed]"
+    };
+
+    // The /creator/{id} page loads any user, so this links readers' profiles too.
+    private static string CreatorUrl(string userId) => $"/creator/{userId}";
 
     private static string? TargetLink(Report r)
     {
@@ -329,6 +390,21 @@
             return $"/series/{r.Series.Id}";
         }
 
+        if (r.TargetType == ReportTargetType.CreatorPost && r.CreatorPost is not null)
+        {
+            return CreatorUrl(r.CreatorPost.CreatorId);
+        }
+
+        if (r.TargetType == ReportTargetType.CreatorPostComment && r.CreatorPostComment is not null)
+        {
+            return CreatorUrl(r.CreatorPostComment.CreatorPost.CreatorId);
+        }
+
+        if (r.TargetType == ReportTargetType.Creator && r.ReportedCreatorId is not null)
+        {
+            return CreatorUrl(r.ReportedCreatorId);
+        }
+
         return null;
     }
 
@@ -339,54 +415,158 @@
         await Reload();
     }
 
-    private async Task ResolveAndRemove(Report report)
+    private async Task ResolveCreator(Report report)
     {
-        if (report.TargetType == ReportTargetType.Comment)
-        {
-            if (report.CommentId is int commentId)
-            {
-                var comment = await Db.Comments.FindAsync(commentId);
-                if (comment is not null)
-                {
-                    Db.Comments.Remove(comment);
-                }
+        report.Status = ReportStatus.Resolved;
 
-                var siblings = await Db.Reports
-                    .Where(r => r.CommentId == commentId && r.Status == ReportStatus.Pending)
-                    .ToListAsync();
-                foreach (var s in siblings)
-                {
-                    s.Status = ReportStatus.Resolved;
-                }
-            }
-            else
-            {
-                report.Status = ReportStatus.Resolved;
-            }
-        }
-        else if (report.TargetType == ReportTargetType.Series)
+        // Same as removing content: close every other pending report on this creator too.
+        if (report.ReportedCreatorId is string creatorId)
         {
-            if (report.SeriesId is int seriesId)
+            var siblings = await Db.Reports
+                .Where(r => r.ReportedCreatorId == creatorId && r.Status == ReportStatus.Pending)
+                .ToListAsync();
+            foreach (var s in siblings)
             {
-                var series = await Db.Series.FindAsync(seriesId);
-                if (series is not null)
-                {
-                    var directReports = await Db.Reports
-                        .Where(r => r.SeriesId == seriesId)
-                        .ToListAsync();
-                    Db.Reports.RemoveRange(directReports);
-
-                    Db.Series.Remove(series);
-                }
-            }
-            else
-            {
-                report.Status = ReportStatus.Resolved;
+                s.Status = ReportStatus.Resolved;
             }
         }
 
         await Db.SaveChangesAsync();
+        await Reload();
+    }
+
+    private async Task ResolveAndRemove(Report report)
+    {
+        switch (report.TargetType)
+        {
+            case ReportTargetType.Comment:
+                await RemoveComment(report);
+                break;
+            case ReportTargetType.Series:
+                await RemoveSeries(report);
+                break;
+            case ReportTargetType.CreatorPost:
+                await RemoveCreatorPost(report);
+                break;
+            case ReportTargetType.CreatorPostComment:
+                await RemoveCreatorPostComment(report);
+                break;
+        }
+
         _confirmingRemoveId = null;
         await Reload();
+    }
+
+    private async Task RemoveComment(Report report)
+    {
+        if (report.CommentId is int commentId)
+        {
+            var comment = await Db.Comments.FindAsync(commentId);
+            if (comment is not null)
+            {
+                Db.Comments.Remove(comment);
+            }
+
+            var siblings = await Db.Reports
+                .Where(r => r.CommentId == commentId && r.Status == ReportStatus.Pending)
+                .ToListAsync();
+            foreach (var s in siblings)
+            {
+                s.Status = ReportStatus.Resolved;
+            }
+        }
+        else
+        {
+            report.Status = ReportStatus.Resolved;
+        }
+
+        await Db.SaveChangesAsync();
+    }
+
+    private async Task RemoveSeries(Report report)
+    {
+        if (report.SeriesId is int seriesId)
+        {
+            var series = await Db.Series.FindAsync(seriesId);
+            if (series is not null)
+            {
+                var directReports = await Db.Reports
+                    .Where(r => r.SeriesId == seriesId)
+                    .ToListAsync();
+                Db.Reports.RemoveRange(directReports);
+
+                Db.Series.Remove(series);
+            }
+        }
+        else
+        {
+            report.Status = ReportStatus.Resolved;
+        }
+
+        await Db.SaveChangesAsync();
+    }
+
+    private async Task RemoveCreatorPost(Report report)
+    {
+        if (report.CreatorPostId is not int postId)
+        {
+            report.Status = ReportStatus.Resolved;
+            await Db.SaveChangesAsync();
+            return;
+        }
+
+        // Detaches and closes reports on the post and all its replies (Restrict links),
+        // saving before the delete so the order is guaranteed.
+        await ReportCleanup.DetachForCreatorPostAsync(Db, postId);
+
+        var post = await Db.CreatorPosts.FindAsync(postId);
+        if (post is not null)
+        {
+            Db.CreatorPosts.Remove(post);
+            await Db.SaveChangesAsync();
+        }
+    }
+
+    private async Task RemoveCreatorPostComment(Report report)
+    {
+        if (report.CreatorPostCommentId is not int commentId)
+        {
+            report.Status = ReportStatus.Resolved;
+            await Db.SaveChangesAsync();
+            return;
+        }
+
+        var target = await Db.CreatorPostComments.FindAsync(commentId);
+        if (target is null)
+        {
+            report.Status = ReportStatus.Resolved;
+            await Db.SaveChangesAsync();
+            return;
+        }
+
+        // Replies can nest to any depth, and the parent link is Restrict, so the whole
+        // subtree under this reply has to go with it.
+        var all = await Db.CreatorPostComments
+            .Where(c => c.CreatorPostId == target.CreatorPostId)
+            .ToListAsync();
+
+        var ids = new HashSet<int> { commentId };
+        var grew = true;
+        while (grew)
+        {
+            grew = false;
+            foreach (var c in all)
+            {
+                if (c.ParentCommentId is int parentId && ids.Contains(parentId) && ids.Add(c.Id))
+                {
+                    grew = true;
+                }
+            }
+        }
+
+        await ReportCleanup.DetachForCreatorPostCommentsAsync(Db, ids.ToList());
+
+        Db.CreatorPostComments.RemoveRange(all.Where(c => ids.Contains(c.Id)));
+        await Db.SaveChangesAsync();
     }
 }

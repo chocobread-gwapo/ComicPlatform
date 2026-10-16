@@ -1,4 +1,4 @@
-﻿@page "/Account/ExternalLogin"
+@page "/Account/ExternalLogin"
 
 @using System.ComponentModel.DataAnnotations
 @using System.Security.Claims
@@ -16,33 +16,78 @@
 @inject IdentityRedirectManager RedirectManager
 @inject ILogger<ExternalLogin> Logger
 
-<PageTitle>Register</PageTitle>
+<PageTitle>@(existingUser is not null ? "Link your account" : "Register")</PageTitle>
 
 <StatusMessage Message="@message" />
-<h1>Register</h1>
-<h2>Associate your @ProviderDisplayName account.</h2>
-<hr />
 
-<div  class="alert alert-info">
-    You've successfully authenticated with <strong>@ProviderDisplayName</strong>.
-    Please enter an email address for this site below and click the Register button to finish
-    logging in.
-</div>
+@if (existingUser is not null)
+{
+    @* An account with this email already exists, but the provider didn't vouch that the
+       email is verified (Facebook never does), so we can't link automatically. *@
+    <h1>Link your account</h1>
+    <h2>Connect your @ProviderDisplayName account.</h2>
+    <hr />
 
-<div class="row">
-    <div class="col-md-4">
-        <EditForm Model="Input" OnValidSubmit="OnValidSubmitAsync" FormName="confirmation" method="post">
-            <DataAnnotationsValidator />
-            <ValidationSummary class="text-danger" role="alert" />
-            <div class="form-floating mb-3">
-                <InputText @bind-Value="Input.Email" id="Input.Email" class="form-control" autocomplete="email" placeholder="Please enter your email." />
-                <label for="Input.Email" class="form-label">Email</label>
-                <ValidationMessage For="() => Input.Email" />
-            </div>
-            <button type="submit" class="w-100 btn btn-lg btn-primary">Register</button>
-        </EditForm>
+    <div class="alert alert-info">
+        You've successfully authenticated with <strong>@ProviderDisplayName</strong>, and an account
+        for <strong>@existingEmail</strong> already exists here. To link them, confirm the existing
+        account is yours.
     </div>
-</div>
+
+    @if (canLinkWithPassword)
+    {
+        <div class="row">
+            <div class="col-md-4">
+                <EditForm Model="LinkInput" OnValidSubmit="OnLinkSubmitAsync" FormName="link" method="post">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary class="text-danger" role="alert" />
+                    <div class="form-floating mb-3">
+                        <InputText type="password" @bind-Value="LinkInput.Password" id="LinkInput.Password" class="form-control" autocomplete="current-password" placeholder="Enter your password." />
+                        <label for="LinkInput.Password" class="form-label">Password</label>
+                        <ValidationMessage For="() => LinkInput.Password" />
+                    </div>
+                    <button type="submit" class="w-100 btn btn-lg btn-primary">Link and sign in</button>
+                </EditForm>
+            </div>
+        </div>
+    }
+    else
+    {
+        <p>
+            This account can't be confirmed with a password here (it has no password, or it uses
+            two-factor authentication). Sign in the way you normally do, then add
+            @ProviderDisplayName from <strong>Account &rarr; External logins</strong>.
+        </p>
+        <p><a href="Account/Login">Back to sign in</a></p>
+    }
+}
+else
+{
+    <h1>Register</h1>
+    <h2>Associate your @ProviderDisplayName account.</h2>
+    <hr />
+
+    <div class="alert alert-info">
+        You've successfully authenticated with <strong>@ProviderDisplayName</strong>.
+        Please enter an email address for this site below and click the Register button to finish
+        logging in.
+    </div>
+
+    <div class="row">
+        <div class="col-md-4">
+            <EditForm Model="Input" OnValidSubmit="OnValidSubmitAsync" FormName="confirmation" method="post">
+                <DataAnnotationsValidator />
+                <ValidationSummary class="text-danger" role="alert" />
+                <div class="form-floating mb-3">
+                    <InputText @bind-Value="Input.Email" id="Input.Email" class="form-control" autocomplete="email" placeholder="Please enter your email." />
+                    <label for="Input.Email" class="form-label">Email</label>
+                    <ValidationMessage For="() => Input.Email" />
+                </div>
+                <button type="submit" class="w-100 btn btn-lg btn-primary">Register</button>
+            </EditForm>
+        </div>
+    </div>
+}
 
 @code {
     public const string LoginCallbackAction = "LoginCallback";
@@ -50,11 +95,19 @@
     private string? message;
     private ExternalLoginInfo? externalLoginInfo;
 
+    // Set when the provider's email matches an existing account we couldn't auto-link.
+    private ApplicationUser? existingUser;
+    private string? existingEmail;
+    private bool canLinkWithPassword;
+
     [CascadingParameter]
     private HttpContext HttpContext { get; set; } = default!;
 
-    [SupplyParameterFromForm]
+    [SupplyParameterFromForm(FormName = "confirmation")]
     private InputModel Input { get; set; } = default!;
+
+    [SupplyParameterFromForm(FormName = "link")]
+    private LinkModel LinkInput { get; set; } = default!;
 
     [SupplyParameterFromQuery]
     private string? RemoteError { get; set; }
@@ -70,6 +123,7 @@
     protected override async Task OnInitializedAsync()
     {
         Input ??= new();
+        LinkInput ??= new();
 
         if (RemoteError is not null)
         {
@@ -97,6 +151,13 @@
             // We should only reach this page via the login callback, so redirect back to
             // the login page if we get here some other way.
             RedirectManager.RedirectTo("Account/Login");
+        }
+        else
+        {
+            // A form was posted (register or link). This page re-runs on every post, so
+            // work out again whether the link prompt applies, otherwise a failed attempt
+            // (wrong password) would re-render the register form instead.
+            await PrepareLinkPromptAsync();
         }
     }
 
@@ -141,9 +202,8 @@
         {
             // Only auto-link when the provider itself vouches the email is verified —
             // otherwise anyone could claim someone else's email and get linked into
-            // their account. Google always sends this claim; if a provider doesn't,
-            // this safely falls through to the normal "create an account" flow below
-            // instead of linking.
+            // their account. Google always sends this claim; Facebook doesn't, so it
+            // goes through the password-confirmation step below instead.
             var emailVerifiedClaim = externalLoginInfo.Principal.FindFirst("email_verified");
             var isEmailVerified = emailVerifiedClaim is not null
                 && bool.TryParse(emailVerifiedClaim.Value, out var verified)
@@ -151,33 +211,113 @@
 
             if (isEmailVerified)
             {
-                var existingUser = await UserManager.FindByEmailAsync(email);
-                if (existingUser is not null)
+                var verifiedUser = await UserManager.FindByEmailAsync(email);
+                if (verifiedUser is not null)
                 {
-                    var linkResult = await UserManager.AddLoginAsync(existingUser, externalLoginInfo);
+                    var linkResult = await UserManager.AddLoginAsync(verifiedUser, externalLoginInfo);
                     if (linkResult.Succeeded)
                     {
                         Logger.LogInformation(
                             "Linked {LoginProvider} login to existing account for {Email}.",
                             externalLoginInfo.LoginProvider,
                             email);
-                        await SignInManager.SignInAsync(existingUser, isPersistent: false, externalLoginInfo.LoginProvider);
+                        await SignInManager.SignInAsync(verifiedUser, isPersistent: false, externalLoginInfo.LoginProvider);
                         RedirectManager.RedirectTo(ReturnUrl);
                         return;
                     }
 
-                    // Linking failed for some reason (rare) — fall through to the
-                    // normal registration flow rather than risk signing in to the
-                    // wrong account.
+                    // Linking failed for some reason (rare) — fall through rather than
+                    // risk signing in to the wrong account.
                 }
             }
         }
 
-        // If the user does not have an account, then ask the user to create an account.
+        // Email matches an existing account but wasn't verified by the provider:
+        // ask the person to prove they own that account before linking.
+        await PrepareLinkPromptAsync();
+        if (existingUser is not null)
+        {
+            return;
+        }
+
+        // No existing account: ask the user to create one.
         if (externalLoginInfo.Principal.HasClaim(c => c.Type == ClaimTypes.Email))
         {
             Input.Email = externalLoginInfo.Principal.FindFirstValue(ClaimTypes.Email) ?? "";
         }
+    }
+
+    private async Task PrepareLinkPromptAsync()
+    {
+        if (externalLoginInfo is null)
+        {
+            return;
+        }
+
+        var email = externalLoginInfo.Principal.FindFirstValue(ClaimTypes.Email);
+        if (string.IsNullOrEmpty(email))
+        {
+            return;
+        }
+
+        var user = await UserManager.FindByEmailAsync(email);
+        if (user is null)
+        {
+            return;
+        }
+
+        existingUser = user;
+        existingEmail = email;
+
+        // Password confirmation only works for accounts that have a password, and we
+        // don't let it stand in for two-factor, so those are sent to sign in normally.
+        canLinkWithPassword = await UserManager.HasPasswordAsync(user)
+            && !await UserManager.GetTwoFactorEnabledAsync(user);
+    }
+
+    private async Task OnLinkSubmitAsync()
+    {
+        if (externalLoginInfo is null || existingUser is null)
+        {
+            RedirectManager.RedirectToWithStatus("Account/Login", "Error loading external login information during confirmation.", HttpContext);
+            return;
+        }
+
+        if (!canLinkWithPassword)
+        {
+            message = "Error: This account can't be confirmed with a password. Sign in normally, then link from your account settings.";
+            return;
+        }
+
+        // lockoutOnFailure counts wrong guesses toward lockout, so this form can't be
+        // used to brute-force the password. It also reports banned (locked out) users.
+        var check = await SignInManager.CheckPasswordSignInAsync(existingUser, LinkInput.Password, lockoutOnFailure: true);
+
+        if (check.IsLockedOut)
+        {
+            RedirectManager.RedirectTo("Account/Lockout");
+            return;
+        }
+
+        if (!check.Succeeded)
+        {
+            message = "Error: Incorrect password.";
+            return;
+        }
+
+        var linkResult = await UserManager.AddLoginAsync(existingUser, externalLoginInfo);
+        if (!linkResult.Succeeded)
+        {
+            message = $"Error: {string.Join(",", linkResult.Errors.Select(error => error.Description))}";
+            return;
+        }
+
+        Logger.LogInformation(
+            "Linked {LoginProvider} login to existing account for {Email} after password confirmation.",
+            externalLoginInfo.LoginProvider,
+            existingEmail);
+        await SignInManager.SignInAsync(existingUser, isPersistent: false, externalLoginInfo.LoginProvider);
+        RedirectManager.RedirectTo(ReturnUrl);
     }
 
     private async Task OnValidSubmitAsync()
@@ -256,5 +396,12 @@
         [Required]
         [EmailAddress]
         public string Email { get; set; } = "";
+    }
+
+    private sealed class LinkModel
+    {
+        [Required]
+        [DataType(DataType.Password)]
+        public string Password { get; set; } = "";
     }
 }

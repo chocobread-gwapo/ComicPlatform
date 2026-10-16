@@ -9,11 +9,72 @@
     padding: 0;
     margin-left: 0.6rem;
 }
-.report-toggle:hover { color: var(--danger); }
-.report-toggle:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 
-.report-form { display: inline-flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; margin-left: 0.6rem; }
-.report-form select { font-size: 0.8rem; padding: 0.2rem 0.4rem; border: 1.5px solid var(--ink); background: var(--panel-bg); color: var(--ink); }
+    .report-toggle:hover {
+        color: var(--danger);
+    }
+
+    .report-toggle:focus-visible {
+        outline: 3px solid var(--accent);
+        outline-offset: 2px;
+    }
+
+/* Now a small stacked form (category, written reason, counter, buttons) instead of one row. */
+.report-form {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.4rem;
+    width: min(380px, 100%);
+    margin: 0.5rem 0 0.25rem 0.6rem;
+}
+
+    .report-form select {
+        font-size: 0.8rem;
+        padding: 0.2rem 0.4rem;
+        border: 1.5px solid var(--ink);
+        background: var(--panel-bg);
+        color: var(--ink);
+    }
+
+.report-details {
+    font: inherit;
+    font-size: 0.85rem;
+    min-height: 4.5rem;
+    padding: 0.4rem 0.5rem;
+    resize: vertical;
+    border: 1.5px solid var(--ink);
+    background: var(--panel-bg);
+    color: var(--ink);
+}
+
+    .report-details:focus-visible {
+        outline: 3px solid var(--accent);
+        outline-offset: 2px;
+    }
+
+.report-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.75rem;
+    font-size: 0.75rem;
+}
+
+.report-count {
+    margin-left: auto;
+    color: var(--muted-text);
+}
+
+.report-error {
+    color: var(--danger);
+    font-weight: 600;
+}
+
+.report-buttons {
+    display: flex;
+    gap: 0.4rem;
+}
 
 .report-submit, .report-cancel {
     font-size: 0.75rem;
@@ -24,8 +85,29 @@
     color: var(--ink);
     cursor: pointer;
 }
-.report-submit:hover { background: var(--ink); color: var(--paper); }
-.report-cancel:hover { background: var(--panel-bg); }
-.report-submit:focus-visible, .report-cancel:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 
-.report-state { font-size: 0.8rem; color: var(--muted-text); font-style: italic; margin-left: 0.6rem; }
+    .report-submit:hover {
+        background: var(--ink);
+        color: var(--paper);
+    }
+
+    .report-submit:disabled {
+        opacity: 0.5;
+        cursor: default;
+    }
+
+    .report-cancel:hover {
+        background: var(--panel-bg);
+    }
+
+    .report-submit:focus-visible, .report-cancel:focus-visible {
+        outline: 3px solid var(--accent);
+        outline-offset: 2px;
+    }
+
+.report-state {
+    font-size: 0.8rem;
+    color: var(--muted-text);
+    font-style: italic;
+    margin-left: 0.6rem;
+}

@@ -128,5 +128,28 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             .HasOne(r => r.Reporter)
             .WithMany()
             .HasForeignKey(r => r.ReporterId).OnDelete(DeleteBehavior.Restrict);
+
+        // Reports on creator posts, post replies and creator profiles. All Restrict: a
+        // post delete already cascades to its replies, so SetNull here would give SQL
+        // Server two cascade paths into Report (and ReportedCreator points at
+        // AspNetUsers, same problem as CreatorFollow). The code that deletes posts and
+        // replies detaches their reports first — see ReportCleanup.
+        builder.Entity<Report>()
+            .HasOne(r => r.CreatorPost)
+            .WithMany()
+            .HasForeignKey(r => r.CreatorPostId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Entity<Report>()
+            .HasOne(r => r.CreatorPostComment)
+            .WithMany()
+            .HasForeignKey(r => r.CreatorPostCommentId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Entity<Report>()
+            .HasOne(r => r.ReportedCreator)
+            .WithMany()
+            .HasForeignKey(r => r.ReportedCreatorId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

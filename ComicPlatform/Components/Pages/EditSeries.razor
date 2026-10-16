@@ -63,6 +63,16 @@
             </div>
 
             <div class="field">
+                <label>Age rating</label>
+                <InputSelect @bind-Value="_model.Rating">
+                    <option value="@AgeRating.Age13">13+ (everyone)</option>
+                    <option value="@AgeRating.Age16">16+</option>
+                    <option value="@AgeRating.Age18">18+ (mature)</option>
+                </InputSelect>
+                <p class="hint">Readers younger than this can't see the series or open it. If you're unsure, choose the higher rating.</p>
+            </div>
+
+            <div class="field">
                 <label>Genres</label>
                 <GenrePicker AllGenres="_allGenres"
                              @bind-SelectedGenreIds="_selectedGenreIds"
@@ -183,6 +193,12 @@
         background: var(--panel-bg);
         color: var(--ink);
         box-sizing: border-box;
+    }
+
+    .field .hint {
+        margin: 0.35rem 0 0;
+        font-size: 0.85rem;
+        color: var(--muted-text);
     }
 
     .cover-preview {
@@ -318,6 +334,7 @@
                 _model.Title = series.Title;
                 _model.Synopsis = series.Synopsis;
                 _model.Status = series.Status;
+                _model.Rating = series.Rating;
                 _selectedGenreIds = series.Genres.Select(g => g.Id).ToHashSet();
                 _mainGenreId = series.MainGenreId;
                 _tagNames = series.Tags.Select(t => t.Name).ToList();
@@ -437,6 +454,7 @@
         _series.Title = _model.Title;
         _series.Synopsis = _model.Synopsis;
         _series.Status = _model.Status;
+        _series.Rating = _model.Rating;
         _series.UpdatedAt = DateTime.UtcNow;
 
         if (_newCoverUrl is not null)
@@ -481,6 +499,8 @@
         public string Synopsis { get; set; } = string.Empty;
 
         public SeriesStatus Status { get; set; } = SeriesStatus.Ongoing;
+
+        public AgeRating Rating { get; set; } = AgeRating.Age13;
     }
 
     private class AuthorDisplay

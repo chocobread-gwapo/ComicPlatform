@@ -14,6 +14,18 @@ public enum SeriesStatus
 }
 
 /// <summary>
+/// The youngest age that may see a series. Declared in ascending order on purpose, so
+/// "series.Rating <= the viewer's highest allowed rating" is the whole visibility check
+/// (see AgeGate). New series default to 13+, which is also the sign-up minimum.
+/// </summary>
+public enum AgeRating
+{
+    Age13,
+    Age16,
+    Age18
+}
+
+/// <summary>
 /// A comic/webtoon title, e.g. "The Last Signal" — the top-level thing a reader follows.
 /// </summary>
 public class Series
@@ -28,6 +40,9 @@ public class Series
     public string? CoverImageUrl { get; set; }
 
     public SeriesStatus Status { get; set; } = SeriesStatus.Ongoing;
+
+    // Set by the creator on the series form. Viewers younger than this can't see the series.
+    public AgeRating Rating { get; set; } = AgeRating.Age13;
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
@@ -199,10 +214,10 @@ public class CreatorPost
 }
 
 /// <summary>
-/// A reader reply on a CreatorPost. Same single-level threading as Comment
-/// (a reply can't itself be replied to) — kept as its own entity rather than
-/// extending Comment, since Comment is Chapter-specific elsewhere in the app
-/// and reporting isn't wired up for this yet, same as chapters aren't reportable.
+/// A reader reply on a CreatorPost. A reply can itself be replied to, to any depth
+/// (see CreatorProfile / CreatorReplyThread) — kept as its own entity rather than
+/// extending Comment, since Comment is Chapter-specific elsewhere in the app.
+/// Reportable through Report.CreatorPostCommentId.
 /// </summary>
 public class CreatorPostComment
 {
@@ -269,19 +284,35 @@ public class SeriesAuthor
 
 public enum ReportReason { Spam, HarassmentOrHate, Spoilers, Copyright, Inappropriate, Other }
 public enum ReportStatus { Pending, Resolved, Dismissed }
-public enum ReportTargetType { Comment, Series }
+// New values go at the end so the stored values for Comment (0) and Series (1) don't change.
+public enum ReportTargetType { Comment, Series, CreatorPost, CreatorPostComment, Creator }
 
 public class Report
 {
     public int Id { get; set; }
     public ReportTargetType TargetType { get; set; }
+
+    // Exactly one of these is set, matching TargetType. They go back to null if the
+    // content is deleted, which is why the admin page shows "[... already removed]".
     public int? CommentId { get; set; }
     public Comment? Comment { get; set; }
     public int? SeriesId { get; set; }
     public Series? Series { get; set; }
+    public int? CreatorPostId { get; set; }
+    public CreatorPost? CreatorPost { get; set; }
+    public int? CreatorPostCommentId { get; set; }
+    public CreatorPostComment? CreatorPostComment { get; set; }
+    public string? ReportedCreatorId { get; set; }
+    public ApplicationUser? ReportedCreator { get; set; }
+
     public string ReporterId { get; set; } = string.Empty;
     public ApplicationUser Reporter { get; set; } = null!;
     public ReportReason Reason { get; set; }
+
+    // The reporter's own written explanation (required in the report form).
+    [MaxLength(500)]
+    public string Details { get; set; } = string.Empty;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public ReportStatus Status { get; set; } = ReportStatus.Pending;
 }

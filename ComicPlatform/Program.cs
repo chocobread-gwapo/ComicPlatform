@@ -76,7 +76,10 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
 
 builder.Services.AddScoped<IUserClaimsPrincipalFactory<ApplicationUser>, CustomUserClaimsPrincipalFactory>();
 
-builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
+// Real confirmation / password-reset emails over SMTP (Gmail for now). User and Password
+// come from User Secrets, section "Email". See SmtpEmailSender.cs.
+builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("Email"));
+builder.Services.AddTransient<IEmailSender<ApplicationUser>, SmtpEmailSender>();
 
 builder.Services.Configure<Microsoft.AspNetCore.SignalR.HubOptions>(options =>
 {

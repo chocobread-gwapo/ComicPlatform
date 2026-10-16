@@ -8,6 +8,10 @@ public class ApplicationUser : IdentityUser
     public string? Bio { get; set; }
     public string? AvatarUrl { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    // Self-declared date of birth. Used only to work out which age-rated series this
+    // person can see (see AgeGate). Never shown on profiles.
+    public DateOnly? BirthDate { get; set; }
     public string? StripeConnectAccountId { get; set; }
     public bool StripeOnboardingComplete { get; set; }
 

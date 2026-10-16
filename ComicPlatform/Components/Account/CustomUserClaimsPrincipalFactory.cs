@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 using ComicPlatform.Data;
 using Microsoft.AspNetCore.Identity;
@@ -29,6 +30,14 @@ public class CustomUserClaimsPrincipalFactory(
         if (!string.IsNullOrWhiteSpace(user.DisplayName))
         {
             identity.AddClaim(new Claim("DisplayName", user.DisplayName));
+        }
+
+        // Read by AgeGate so pages can work out the viewer's age (and which age-rated
+        // series they may see) without a DB lookup. Added or refreshed whenever
+        // the cookie is re-issued, e.g. after ChooseBirthday saves.
+        if (user.BirthDate is DateOnly birthDate)
+        {
+            identity.AddClaim(new Claim("BirthDate", birthDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
         }
 
         return principal;

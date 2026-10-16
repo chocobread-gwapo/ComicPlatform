@@ -51,6 +51,16 @@
         </div>
 
         <div class="field">
+            <label>Age rating</label>
+            <InputSelect @bind-Value="_model.Rating">
+                <option value="@AgeRating.Age13">13+ (everyone)</option>
+                <option value="@AgeRating.Age16">16+</option>
+                <option value="@AgeRating.Age18">18+ (mature)</option>
+            </InputSelect>
+            <p class="hint">Readers younger than this can't see the series or open it. If you're unsure, choose the higher rating.</p>
+        </div>
+
+        <div class="field">
             <label>Genres</label>
             <GenrePicker AllGenres="_allGenres"
                          @bind-SelectedGenreIds="_selectedGenreIds"
@@ -125,6 +135,12 @@
         background: var(--panel-bg);
         color: var(--ink);
         box-sizing: border-box;
+    }
+
+    .field .hint {
+        margin: 0.35rem 0 0;
+        font-size: 0.85rem;
+        color: var(--muted-text);
     }
 
     .cover-preview {
@@ -223,6 +239,7 @@
             Title = _model.Title,
             Synopsis = _model.Synopsis,
             Status = _model.Status,
+            Rating = _model.Rating,
             CoverImageUrl = _newCoverUrl,
             CreatorId = userId,
             MainGenreId = _mainGenreId
@@ -258,5 +275,7 @@
         public string Synopsis { get; set; } = string.Empty;
 
         public SeriesStatus Status { get; set; } = SeriesStatus.Ongoing;
+
+        public AgeRating Rating { get; set; } = AgeRating.Age13;
     }
 }

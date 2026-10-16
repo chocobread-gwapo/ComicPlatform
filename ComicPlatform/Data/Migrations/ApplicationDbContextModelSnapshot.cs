@@ -36,6 +36,9 @@ namespace ComicPlatform.Migrations
                     b.Property<string>("Bio")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<DateOnly?>("BirthDate")
+                        .HasColumnType("date");
+
                     b.Property<string>("ConcurrencyStamp")
                         .IsConcurrencyToken()
                         .HasColumnType("nvarchar(max)");
@@ -392,8 +395,22 @@ namespace ComicPlatform.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<int?>("CreatorPostCommentId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CreatorPostId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Details")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<int>("Reason")
                         .HasColumnType("int");
+
+                    b.Property<string>("ReportedCreatorId")
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<string>("ReporterId")
                         .IsRequired()
@@ -411,6 +428,12 @@ namespace ComicPlatform.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CommentId");
+
+                    b.HasIndex("CreatorPostCommentId");
+
+                    b.HasIndex("CreatorPostId");
+
+                    b.HasIndex("ReportedCreatorId");
 
                     b.HasIndex("ReporterId");
 
@@ -438,6 +461,9 @@ namespace ComicPlatform.Migrations
                         .HasColumnType("nvarchar(450)");
 
                     b.Property<int?>("MainGenreId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Rating")
                         .HasColumnType("int");
 
                     b.Property<int>("Status")
@@ -855,6 +881,21 @@ namespace ComicPlatform.Migrations
                         .HasForeignKey("CommentId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("ComicPlatform.Models.CreatorPostComment", "CreatorPostComment")
+                        .WithMany()
+                        .HasForeignKey("CreatorPostCommentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ComicPlatform.Models.CreatorPost", "CreatorPost")
+                        .WithMany()
+                        .HasForeignKey("CreatorPostId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ComicPlatform.Data.ApplicationUser", "ReportedCreator")
+                        .WithMany()
+                        .HasForeignKey("ReportedCreatorId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("ComicPlatform.Data.ApplicationUser", "Reporter")
                         .WithMany()
                         .HasForeignKey("ReporterId")
@@ -867,6 +908,12 @@ namespace ComicPlatform.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Comment");
+
+                    b.Navigation("CreatorPost");
+
+                    b.Navigation("CreatorPostComment");
+
+                    b.Navigation("ReportedCreator");
 
                     b.Navigation("Reporter");
 

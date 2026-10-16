@@ -1,0 +1,114 @@
+@page "/Account/ChooseBirthday"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Identity
+@using ComicPlatform.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Your birthday</PageTitle>
+
+<AuthCard Title="When's your birthday?" Subtitle="Please enter your date of birth to continue.">
+    <StatusMessage Message="@Message" />
+
+    <EditForm Model="Input" method="post" OnValidSubmit="SaveBirthday" FormName="choose-birthday" class="auth-fields">
+        <DataAnnotationsValidator />
+        <ValidationSummary class="auth-error" role="alert" />
+
+        <div class="auth-field">
+            <label for="Input.BirthDate">Date of birth</label>
+            <InputDate TValue="DateTime?" @bind-Value="Input.BirthDate" id="Input.BirthDate" class="auth-input" autocomplete="bday" max="@DateTime.UtcNow.ToString("yyyy-MM-dd")" />
+            <ValidationMessage For="() => Input.BirthDate" class="auth-error" />
+        </div>
+
+        <p class="auth-hint">
+            We use your date of birth to confirm you're eligible and to show you series that are suitable for
+            your age. It isn't shown on your profile.
+        </p>
+
+        <button type="submit" class="auth-btn auth-primary">Continue</button>
+    </EditForm>
+</AuthCard>
+
+@code {
+    private string? errorMessage;
+    private string? Message => errorMessage is null ? null : $"Error: {errorMessage}";
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Input ??= new();
+
+        // Already set? Then there's nothing to do here. A birthday can't be changed from
+        // this page, otherwise anyone could re-enter a later one to unlock 16+ / 18+ series.
+        var user = await UserManager.GetUserAsync(HttpContext.User);
+        if (user?.BirthDate is not null)
+        {
+            RedirectManager.RedirectTo("/");
+        }
+    }
+
+    private async Task SaveBirthday()
+    {
+        var user = await UserManager.GetUserAsync(HttpContext.User);
+        if (user is null)
+        {
+            RedirectManager.RedirectTo("Account/Login");
+            return;
+        }
+
+        if (user.BirthDate is not null)
+        {
+            RedirectManager.RedirectTo("/");
+            return;
+        }
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var birthDate = DateOnly.FromDateTime(Input.BirthDate!.Value);
+
+        if (birthDate > today)
+        {
+            errorMessage = "That date is in the future.";
+            return;
+        }
+
+        var age = AgeGate.AgeOn(birthDate, today);
+
+        if (age > 120)
+        {
+            errorMessage = "Please check your date of birth.";
+            return;
+        }
+
+        if (age < AgeGate.MinimumSignupAge)
+        {
+            errorMessage = $"Catkoom is for people {AgeGate.MinimumSignupAge} and older.";
+            return;
+        }
+
+        user.BirthDate = birthDate;
+        await UserManager.UpdateAsync(user);
+
+        // Re-issues the auth cookie through CustomUserClaimsPrincipalFactory, so the
+        // BirthDate claim is there straight away — no logout/login needed.
+        await SignInManager.RefreshSignInAsync(user);
+
+        RedirectManager.RedirectTo("/");
+    }
+
+    private sealed class InputModel
+    {
+        [Required(ErrorMessage = "Please enter your date of birth.")]
+        [Display(Name = "Date of birth")]
+        public DateTime? BirthDate { get; set; }
+    }
+}

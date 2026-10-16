@@ -26,6 +26,10 @@
             &#9825; @Post.LikeCount
         </button>
         <span class="post-comment-count">@TotalReplyCount repl@(TotalReplyCount == 1 ? "y" : "ies")</span>
+        @if (CurrentUserId is not null && !CanManage)
+        {
+            <ReportButton TargetType="ReportTargetType.CreatorPost" TargetId="@Post.Id" />
+        }
     </div>
 
     @if (Post.Replies.Count > 0)
@@ -186,6 +190,10 @@
         var existing = await db.CreatorPosts.FindAsync(Post.Id);
         if (existing is not null)
         {
+            // Reports on this post or its replies can't point at rows that are about
+            // to be deleted (Restrict), so detach and close them first.
+            await ReportCleanup.DetachForCreatorPostAsync(db, Post.Id);
+
             db.CreatorPosts.Remove(existing);
             await db.SaveChangesAsync();
         }

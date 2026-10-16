@@ -13,14 +13,33 @@
 else if (_open)
 {
     <span class="report-form">
-        <select @bind="_reason">
+        <select @bind="_reason" aria-label="Report category">
             @foreach (var r in _reasons)
             {
                 <option value="@r">@Label(r)</option>
             }
         </select>
-        <button type="button" class="report-submit" @onclick="Submit">Submit</button>
-        <button type="button" class="report-cancel" @onclick="() => _open = false">Cancel</button>
+
+        <textarea class="report-details"
+                  rows="3"
+                  maxlength="@MaxDetails"
+                  placeholder="Tell us what's wrong (required)"
+                  aria-label="Explain why you're reporting this"
+                  @bind="_details"
+                  @bind:event="oninput"></textarea>
+
+        <span class="report-meta">
+            @if (_error is not null)
+            {
+                <span class="report-error" role="alert">@_error</span>
+            }
+            <span class="report-count">@_details.Length / @MaxDetails</span>
+        </span>
+
+        <span class="report-buttons">
+            <button type="button" class="report-submit" disabled="@_submitting" @onclick="Submit">Submit</button>
+            <button type="button" class="report-cancel" @onclick="Cancel">Cancel</button>
+        </span>
     </span>
 }
 else
@@ -29,14 +48,26 @@ else
 }
 
 @code {
+    /// <summary>What is being reported: Comment, Series, CreatorPost, CreatorPostComment or Creator.</summary>
     [Parameter] public ReportTargetType TargetType { get; set; }
+
+    /// <summary>Id of the comment / series / post / post reply. Not used for Creator.</summary>
     [Parameter] public int TargetId { get; set; }
+
+    /// <summary>User id of the creator, used only when TargetType is Creator.</summary>
+    [Parameter] public string? TargetUserId { get; set; }
+
+    private const int MaxDetails = 500;
+    private const int MinDetails = 10;
 
     private static readonly ReportReason[] _reasons = Enum.GetValues<ReportReason>();
 
     private bool _open;
     private bool _alreadyReported;
+    private bool _submitting;
     private ReportReason _reason = ReportReason.Spam;
+    private string _details = string.Empty;
+    private string? _error;
 
     private static string Label(ReportReason r) => r switch
     {
@@ -48,37 +79,95 @@ else
         _ => "Other"
     };
 
+    private void Cancel()
+    {
+        _open = false;
+        _error = null;
+    }
+
     private async Task Submit()
     {
-        var authState = await AuthProvider.GetAuthenticationStateAsync();
-        var userId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
-
-        if (userId is null)
+        if (_submitting)
         {
             return;
         }
 
-        var alreadyPending = await Db.Reports.AnyAsync(r =>
-            r.ReporterId == userId &&
-            r.Status == ReportStatus.Pending &&
-            ((TargetType == ReportTargetType.Comment && r.CommentId == TargetId) ||
-             (TargetType == ReportTargetType.Series && r.SeriesId == TargetId)));
-
-        if (!alreadyPending)
+        var details = (_details ?? string.Empty).Trim();
+        if (details.Length < MinDetails)
         {
-            Db.Reports.Add(new Report
-            {
-                TargetType = TargetType,
-                CommentId = TargetType == ReportTargetType.Comment ? TargetId : null,
-                SeriesId = TargetType == ReportTargetType.Series ? TargetId : null,
-                ReporterId = userId,
-                Reason = _reason
-            });
-
-            await Db.SaveChangesAsync();
+            _error = $"Please explain what's wrong (at least {MinDetails} characters).";
+            return;
         }
 
-        _open = false;
-        _alreadyReported = true;
+        if (details.Length > MaxDetails)
+        {
+            details = details[..MaxDetails];
+        }
+
+        // A Creator report needs a creator id, every other type needs the int id.
+        if (TargetType == ReportTargetType.Creator && string.IsNullOrEmpty(TargetUserId))
+        {
+            return;
+        }
+
+        _submitting = true;
+        _error = null;
+
+        try
+        {
+            var authState = await AuthProvider.GetAuthenticationStateAsync();
+            var userId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+            if (userId is null)
+            {
+                return;
+            }
+
+            // Copied to locals so the EF query doesn't capture component state.
+            var targetType = TargetType;
+            var targetId = TargetId;
+            var targetUserId = TargetUserId;
+
+            var pending = Db.Reports.Where(r =>
+                r.ReporterId == userId &&
+                r.Status == ReportStatus.Pending &&
+                r.TargetType == targetType);
+
+            pending = targetType switch
+            {
+                ReportTargetType.Comment => pending.Where(r => r.CommentId == targetId),
+                ReportTargetType.Series => pending.Where(r => r.SeriesId == targetId),
+                ReportTargetType.CreatorPost => pending.Where(r => r.CreatorPostId == targetId),
+                ReportTargetType.CreatorPostComment => pending.Where(r => r.CreatorPostCommentId == targetId),
+                ReportTargetType.Creator => pending.Where(r => r.ReportedCreatorId == targetUserId),
+                _ => pending.Where(r => false)
+            };
+
+            // One pending report per person per target, same as before.
+            if (!await pending.AnyAsync())
+            {
+                Db.Reports.Add(new Report
+                {
+                    TargetType = targetType,
+                    CommentId = targetType == ReportTargetType.Comment ? targetId : null,
+                    SeriesId = targetType == ReportTargetType.Series ? targetId : null,
+                    CreatorPostId = targetType == ReportTargetType.CreatorPost ? targetId : null,
+                    CreatorPostCommentId = targetType == ReportTargetType.CreatorPostComment ? targetId : null,
+                    ReportedCreatorId = targetType == ReportTargetType.Creator ? targetUserId : null,
+                    ReporterId = userId,
+                    Reason = _reason,
+                    Details = details
+                });
+
+                await Db.SaveChangesAsync();
+            }
+
+            _open = false;
+            _alreadyReported = true;
+        }
+        finally
+        {
+            _submitting = false;
+        }
     }
 }

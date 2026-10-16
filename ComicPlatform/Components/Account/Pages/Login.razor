@@ -13,67 +13,59 @@
 
 <PageTitle>Log in</PageTitle>
 
-<h1>Log in</h1>
-<div class="row">
-    <div class="col-lg-6">
-        <section>
-            <StatusMessage Message="@errorMessage" />
-            <EditForm EditContext="editContext" method="post" OnSubmit="LoginUser" FormName="login">
-                <DataAnnotationsValidator />
-                <h2>Use a local account to log in.</h2>
-                <hr />
-                <ValidationSummary class="text-danger" role="alert" />
-                <div class="form-floating mb-3">
-                    <InputText @bind-Value="Input.Email" id="Input.Email" class="form-control" autocomplete="username webauthn" aria-required="true" placeholder="name@example.com" />
-                    <label for="Input.Email" class="form-label">Email</label>
-                    <ValidationMessage For="() => Input.Email" class="text-danger" />
+<AuthCard Title="Log in to Catkoom" Subtitle="Read, follow, and publish webcomics.">
+    <StatusMessage Message="@errorMessage" />
+
+    <EditForm EditContext="editContext" method="post" OnSubmit="LoginUser" FormName="login" class="auth-stack">
+        <DataAnnotationsValidator />
+
+        @* Expands without JavaScript; stays open after a failed attempt so the error has context. *@
+        <details class="auth-method" open="@emailOpen">
+            <summary class="auth-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" /><path d="m3 7 9 6 9-6" /></svg>
+                <span>Continue with Email</span>
+            </summary>
+            <div class="auth-fields">
+                <ValidationSummary class="auth-error" role="alert" />
+                <div class="auth-field">
+                    <label for="Input.Email">Email</label>
+                    <InputText @bind-Value="Input.Email" id="Input.Email" class="auth-input" autocomplete="username webauthn" aria-required="true" placeholder="name@example.com" />
+                    <ValidationMessage For="() => Input.Email" class="auth-error" />
                 </div>
-                <div class="form-floating mb-3">
-                    <InputText type="password" @bind-Value="Input.Password" id="Input.Password" class="form-control" autocomplete="current-password" aria-required="true" placeholder="password" />
-                    <label for="Input.Password" class="form-label">Password</label>
-                    <ValidationMessage For="() => Input.Password" class="text-danger" />
+                <div class="auth-field">
+                    <label for="Input.Password">Password</label>
+                    <InputText type="password" @bind-Value="Input.Password" id="Input.Password" class="auth-input" autocomplete="current-password" aria-required="true" placeholder="password" />
+                    <ValidationMessage For="() => Input.Password" class="auth-error" />
                 </div>
-                <div class="checkbox mb-3">
-                    <label class="form-label">
-                        <InputCheckbox @bind-Value="Input.RememberMe" class="darker-border-checkbox form-check-input" />
+                <div class="auth-row">
+                    <label class="auth-check">
+                        <InputCheckbox @bind-Value="Input.RememberMe" />
                         Remember me
                     </label>
+                    <a href="Account/ForgotPassword">Forgot password?</a>
                 </div>
-                <div>
-                    <button type="submit" class="w-100 btn btn-lg btn-primary">Log in</button>
-                </div>
-                <hr />
-                <div class="d-flex flex-column">
-                    <span class="text-secondary mx-auto mt-2">OR</span>
-                    <PasskeySubmit Operation="PasskeyOperation.Request" Name="Input.Passkey" EmailName="Input.Email" class="btn btn-link mx-auto">Log in with a passkey</PasskeySubmit>
-                </div>
-                <hr />
-                <div>
-                    <p>
-                        <a href="Account/ForgotPassword">Forgot your password?</a>
-                    </p>
-                    <p>
-                        <a href="@(NavigationManager.GetUriWithQueryParameters("Account/Register", new Dictionary<string, object?> { ["ReturnUrl"] = ReturnUrl }))">Register as a new user</a>
-                    </p>
-                    <p>
-                        <a href="Account/ResendEmailConfirmation">Resend email confirmation</a>
-                    </p>
-                </div>
-            </EditForm>
-        </section>
+                <button type="submit" class="auth-btn auth-primary">Log in</button>
+            </div>
+        </details>
+
+        <PasskeySubmit Operation="PasskeyOperation.Request" Name="Input.Passkey" EmailName="Input.Email" class="auth-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4" /><path d="M10.8 12.2 20 3m-3 3 3 3m-6-6 2 2" /></svg>
+            <span>Continue with a passkey</span>
+        </PasskeySubmit>
+    </EditForm>
+
+    <ExternalLoginPicker />
+
+    <div class="auth-links">
+        <a href="@(NavigationManager.GetUriWithQueryParameters("Account/Register", new Dictionary<string, object?> { ["ReturnUrl"] = ReturnUrl }))">Register as a new user</a>
+        <a href="Account/ResendEmailConfirmation">Resend email confirmation</a>
     </div>
-    <div class="col-lg-4 col-lg-offset-2">
-        <section>
-            <h3>Use another service to log in.</h3>
-            <hr />
-            <ExternalLoginPicker />
-        </section>
-    </div>
-</div>
+</AuthCard>
 
 @code {
     private string? errorMessage;
     private EditContext editContext = default!;
+    private bool emailOpen;
 
     [CascadingParameter]
     private HttpContext HttpContext { get; set; } = default!;
@@ -89,6 +81,9 @@
         Input ??= new();
 
         editContext = new EditContext(Input);
+
+        // A posted form means a failed sign-in, so keep the email form open.
+        emailOpen = HttpMethods.IsPost(HttpContext.Request.Method);
 
         if (HttpMethods.IsGet(HttpContext.Request.Method))
         {

@@ -1,0 +1,177 @@
+<HeadContent>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+</HeadContent>
+
+<div class="auth-wrap">
+    <div class="auth-card">
+        <header class="auth-head">
+            @* Swap this for <Logo /> if that component fits at this size. *@
+            <a class="auth-brand" href="/">Catkoom</a>
+            <h1>@Title</h1>
+            @if (!string.IsNullOrEmpty(Subtitle))
+            {
+                <p>@Subtitle</p>
+            }
+        </header>
+
+        <div class="auth-body">
+            @ChildContent
+        </div>
+
+        <footer class="auth-foot">
+            <a href="/terms">Terms of Use</a>
+            <span>&copy; Catkoom</span>
+            <a href="/privacy">Privacy Policy</a>
+        </footer>
+    </div>
+</div>
+
+<style>
+    .auth-wrap {
+        font-family: 'Public Sans', sans-serif;
+        color: var(--ink);
+        display: flex;
+        justify-content: center;
+        padding: 2rem 1rem 4rem;
+    }
+
+    .auth-card {
+        width: min(440px, 100%);
+        background: var(--panel-bg);
+        border: 1.5px solid var(--ink);
+        padding: 2rem 1.75rem 1.25rem;
+    }
+
+    .auth-head { text-align: center; margin-bottom: 1.5rem; }
+
+    .auth-brand {
+        font-family: 'Fraunces', serif;
+        font-weight: 900;
+        font-size: 1.6rem;
+        color: var(--ink);
+        text-decoration: none;
+    }
+
+    .auth-head h1 {
+        font-family: 'Fraunces', serif;
+        font-weight: 900;
+        font-size: 1.5rem;
+        margin: 0.9rem 0 0.25rem;
+    }
+
+    .auth-head p { margin: 0; color: var(--muted-text); font-size: 0.9rem; }
+
+    .auth-body, .auth-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+    }
+
+    /* One look for every full-width button: submit buttons, the email summary row and the passkey button. */
+    .auth-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.6rem;
+        width: 100%;
+        padding: 0.7rem 1rem;
+        font: inherit;
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: var(--ink);
+        background: transparent;
+        border: 1.5px solid var(--ink);
+        cursor: pointer;
+        text-decoration: none;
+    }
+
+    .auth-btn:hover { background: var(--paper); }
+    .auth-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+    .auth-btn svg { width: 1.2rem; height: 1.2rem; flex-shrink: 0; }
+
+    .auth-primary { background: var(--ink); color: var(--paper); }
+    .auth-primary:hover { background: var(--ink); opacity: 0.88; }
+
+    /* "Continue with Email" is a details element, so it expands with no JavaScript. */
+    .auth-method > summary { list-style: none; }
+    .auth-method > summary::-webkit-details-marker { display: none; }
+
+    .auth-fields {
+        display: flex;
+        flex-direction: column;
+        gap: 0.8rem;
+        padding: 1rem 0.25rem 0.25rem;
+    }
+
+    .auth-field label { display: block; font-size: 0.8rem; font-weight: 600; margin-bottom: 0.25rem; }
+
+    .auth-input {
+        width: 100%;
+        padding: 0.6rem 0.7rem;
+        font: inherit;
+        color: var(--ink);
+        background: var(--paper);
+        border: 1.5px solid var(--ink);
+    }
+
+    .auth-input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+
+    .auth-check { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; }
+
+    .auth-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+    .auth-row a { color: var(--accent); font-size: 0.85rem; font-weight: 600; }
+
+    .auth-error { color: var(--danger); font-size: 0.85rem; }
+    .auth-hint { margin: 0; color: var(--muted-text); font-size: 0.8rem; }
+    ul.auth-error { margin: 0; padding-left: 1.1rem; }
+
+    .auth-divider {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin: 0.4rem 0;
+        color: var(--muted-text);
+        font-size: 0.8rem;
+    }
+
+    .auth-divider::before, .auth-divider::after {
+        content: "";
+        flex: 1;
+        border-top: 1.5px solid var(--ink);
+        opacity: 0.4;
+    }
+
+    .auth-links {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        margin-top: 0.9rem;
+        text-align: center;
+        font-size: 0.85rem;
+    }
+
+    .auth-links a { color: var(--accent); font-weight: 600; }
+
+    .auth-foot {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-top: 1.5rem;
+        padding-top: 0.9rem;
+        border-top: 1.5px solid var(--ink);
+        font-size: 0.75rem;
+        color: var(--muted-text);
+    }
+
+    .auth-foot a { color: inherit; }
+</style>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+
+    [Parameter] public string? Subtitle { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}
