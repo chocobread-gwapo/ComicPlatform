@@ -8,6 +8,7 @@ public class CreatorPostItem
     public int Id { get; set; }
     public string Content { get; set; } = string.Empty;
     public string? ImageUrl { get; set; }
+    public bool ImageIsMature { get; set; }
     public DateTime CreatedAt { get; set; }
     public int LikeCount { get; set; }
     public bool IsLikedByMe { get; set; }

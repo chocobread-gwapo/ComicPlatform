@@ -13,24 +13,20 @@
 
 <PageTitle>Choose a Username</PageTitle>
 
-<h1>Choose a username</h1>
+<AuthCard Title="Choose a username" Subtitle="This is the name other readers will see instead of your email.">
+    <StatusMessage Message="@Message" />
 
-<div class="row">
-    <div class="col-lg-6">
-        <StatusMessage Message="@Message" />
-        <p>Pick a username to continue — this is what other readers will see instead of your email.</p>
-        <EditForm Model="Input" method="post" OnValidSubmit="SetUsername" FormName="choose-username">
-            <DataAnnotationsValidator />
-            <ValidationSummary class="text-danger" role="alert" />
-            <div class="form-floating mb-3">
-                <InputText @bind-Value="Input.DisplayName" id="Input.DisplayName" class="form-control" autocomplete="nickname" aria-required="true" placeholder="Username" />
-                <label for="Input.DisplayName">Username</label>
-                <ValidationMessage For="() => Input.DisplayName" class="text-danger" />
-            </div>
-            <button type="submit" class="w-100 btn btn-lg btn-primary">Save and continue</button>
-        </EditForm>
-    </div>
-</div>
+    <EditForm Model="Input" method="post" OnValidSubmit="SetUsername" FormName="choose-username" class="auth-fields">
+        <DataAnnotationsValidator />
+        <ValidationSummary class="auth-error" role="alert" />
+        <div class="auth-field">
+            <label for="Input.DisplayName">Username</label>
+            <InputText @bind-Value="Input.DisplayName" id="Input.DisplayName" class="auth-input" autocomplete="nickname" aria-required="true" maxlength="30" placeholder="Username" />
+            <ValidationMessage For="() => Input.DisplayName" class="auth-error" />
+        </div>
+        <button type="submit" class="auth-btn auth-primary">Save and continue</button>
+    </EditForm>
+</AuthCard>
 
 @code {
     private string? errorMessage;
@@ -56,13 +52,16 @@
             return;
         }
 
-        if (await UserManager.Users.AnyAsync(u => u.DisplayName == Input.DisplayName && u.Id != user.Id))
+        // Trimmed first, so the taken-check looks at the same text that gets saved.
+        var name = Input.DisplayName.Trim();
+
+        if (await UserManager.Users.AnyAsync(u => u.DisplayName == name && u.Id != user.Id))
         {
             errorMessage = "That username is already taken.";
             return;
         }
 
-        user.DisplayName = Input.DisplayName.Trim();
+        user.DisplayName = name;
         await UserManager.UpdateAsync(user);
 
         // Re-issues the auth cookie through our CustomUserClaimsPrincipalFactory,

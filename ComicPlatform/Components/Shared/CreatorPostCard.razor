@@ -2,8 +2,12 @@
 @using ComicPlatform.Models
 @using ComicPlatform.Components.Shared
 @using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Hosting
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject IWebHostEnvironment Env
+@inject AuthenticationStateProvider AuthProvider
 
 <div class="post-card">
     <div class="post-head">
@@ -18,7 +22,43 @@
 
     @if (!string.IsNullOrEmpty(Post.ImageUrl))
     {
-        <img class="post-image" src="@Post.ImageUrl" alt="" loading="lazy" />
+        @if (!Post.ImageIsMature || CanManage)
+        {
+            @* Not mature, or it's the creator looking at their own post (with a reminder tag). *@
+            <img class="post-image" src="@Post.ImageUrl" alt="" loading="lazy" />
+            @if (Post.ImageIsMature)
+            {
+                <span class="mature-tag">Mature</span>
+            }
+        }
+        else if (_canSeeMature)
+        {
+            @if (_revealed)
+            {
+                <img class="post-image" src="@Post.ImageUrl" alt="" loading="lazy" />
+            }
+            else
+            {
+                <div class="mature-cover">
+                    <p>This post has a mature image.</p>
+                    <button type="button" @onclick="() => _revealed = true">Show image</button>
+                </div>
+            }
+        }
+        else
+        {
+            @* The picture's address isn't put on the page at all for these viewers. *@
+            <div class="mature-cover">
+                @if (CurrentUserId is null)
+                {
+                    <p>This post has a mature image. <a href="/Account/Login">Log in</a> to see it if you're 18 or older.</p>
+                }
+                else
+                {
+                    <p>This post has a mature image that isn't available for your age.</p>
+                }
+            </div>
+        }
     }
 
     <div class="post-actions">
@@ -64,6 +104,15 @@
     .post-delete:hover { color: var(--danger); }
     .post-content { margin: 0 0 0.75rem; line-height: 1.5; white-space: pre-wrap; color: var(--ink); }
     .post-image { max-width: 100%; border: 1.5px solid var(--ink); margin-bottom: 0.75rem; display: block; }
+    .mature-tag { display: inline-block; margin-bottom: 0.75rem; padding: 0.05rem 0.4rem; border: 1.5px solid var(--ink); font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
+    .mature-cover { margin-bottom: 0.75rem; padding: 1.25rem 1rem; border: 1.5px solid var(--ink); text-align: center;
+        background: repeating-linear-gradient(135deg, var(--paper), var(--paper) 10px, var(--hatch) 10px, var(--hatch) 11px); }
+    .mature-cover p { margin: 0 0 0.6rem; font-size: 0.9rem; }
+    .mature-cover p:last-child { margin-bottom: 0; }
+    .mature-cover a { color: var(--accent); font-weight: 600; }
+    .mature-cover button { padding: 0.35rem 0.9rem; border: 1.5px solid var(--ink); background: var(--paper); color: var(--ink); font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+    .mature-cover button:hover { background: var(--panel-bg); }
+    .mature-cover button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 
     .post-actions { display: flex; gap: 1rem; align-items: center; margin-bottom: 0.75rem; }
     .post-like { background: none; border: 1.5px solid var(--border-soft); padding: 0.3rem 0.7rem; font-size: 0.85rem; cursor: pointer; color: var(--ink); }
@@ -93,6 +142,15 @@
     [Parameter] public EventCallback<CreatorPostItem> OnPostDeleted { get; set; }
 
     private string _draftReply = string.Empty;
+    private bool _canSeeMature;
+    private bool _revealed;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Only people who can see 18+ series may see a mature image, same rule as the series pages.
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        _canSeeMature = AgeGate.MaxRatingFor(authState.User) == AgeRating.Age18;
+    }
     private bool _preventDefault;
 
     private int TotalReplyCount => Post.Replies.Sum(r => 1 + CountDescendants(r));
@@ -196,6 +254,9 @@
 
             db.CreatorPosts.Remove(existing);
             await db.SaveChangesAsync();
+
+            // The post is gone, so its picture goes too.
+            PostImages.Delete(Env, existing.ImageUrl);
         }
 
         await OnPostDeleted.InvokeAsync(Post);

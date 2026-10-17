@@ -207,6 +207,10 @@ public class CreatorPost
 
     public string? ImageUrl { get; set; }
 
+    // The creator marked the picture as mature. Adults get it behind a "Show" button; anyone
+    // under 18, and anyone logged out, doesn't get the picture at all (see CreatorPostCard).
+    public bool ImageIsMature { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public ICollection<CreatorPostComment> Comments { get; set; } = new List<CreatorPostComment>();

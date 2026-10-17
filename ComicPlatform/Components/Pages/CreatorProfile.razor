@@ -1,6 +1,8 @@
 @page "/creator/{CreatorId}"
 @using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Hosting
 @using Microsoft.EntityFrameworkCore
 @using ComicPlatform.Data
 @using ComicPlatform.Models
@@ -8,6 +10,7 @@
 @using System.Security.Claims
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject AuthenticationStateProvider AuthProvider
+@inject IWebHostEnvironment Env
 
 <PageTitle>catkoom - @(_creator?.DisplayName ?? "Creator")</PageTitle>
 
@@ -123,9 +126,33 @@ else
             {
                 <div class="composer">
                     <textarea placeholder="Share something..." @bind="_draftPost" @bind:event="oninput" maxlength="2000"></textarea>
+
+                    @if (_draftImageUrl is not null)
+                    {
+                        <div class="composer-image">
+                            <img src="@_draftImageUrl" alt="The image attached to your post" />
+                            <button type="button" class="composer-remove" @onclick="RemoveDraftImage">Remove image</button>
+                            <label class="composer-mature">
+                                <input type="checkbox" @bind="_draftImageMature" />
+                                This image is mature (18+)
+                            </label>
+                        </div>
+                    }
+
+                    @if (_uploadError is not null)
+                    {
+                        <p class="composer-error" role="alert">@_uploadError</p>
+                    }
+
                     <div class="composer-row">
-                        <span class="composer-count">@_draftPost.Length/2000</span>
-                        <button type="button" class="composer-submit" @onclick="SubmitPost" disabled="@string.IsNullOrWhiteSpace(_draftPost)">Post</button>
+                        <label class="composer-attach">
+                            @(_draftImageUrl is null ? "Add image" : "Change image")
+                            <InputFile @key="_fileInputKey" OnChange="OnPostImageSelected" accept="image/png,image/jpeg,image/gif,image/webp" />
+                        </label>
+                        <div class="composer-actions">
+                            <span class="composer-count">@_draftPost.Length/2000</span>
+                            <button type="button" class="composer-submit" @onclick="SubmitPost" disabled="@string.IsNullOrWhiteSpace(_draftPost)">Post</button>
+                        </div>
                     </div>
                 </div>
             }
@@ -209,6 +236,17 @@ else
     .composer textarea:focus-visible { outline: none; }
     .composer-row { display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem; }
     .composer-count { font-size: 0.75rem; color: var(--muted-text); }
+    .composer-actions { display: flex; align-items: center; gap: 0.75rem; }
+    .composer-attach { position: relative; font-size: 0.85rem; font-weight: 600; cursor: pointer; border: 1.5px solid var(--ink); padding: 0.35rem 0.8rem; }
+    .composer-attach:hover { background: var(--paper); }
+    .composer-attach:focus-within { outline: 3px solid var(--accent); outline-offset: 2px; }
+    .composer-attach input { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+    .composer-image { margin-top: 0.6rem; }
+    .composer-image img { display: block; max-width: 100%; max-height: 260px; border: 1.5px solid var(--ink); }
+    .composer-remove { margin-top: 0.4rem; padding: 0; background: none; border: none; color: var(--muted-text); font-size: 0.8rem; text-decoration: underline; cursor: pointer; }
+    .composer-remove:hover { color: var(--danger); }
+    .composer-mature { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.5rem; font-size: 0.85rem; }
+    .composer-error { margin: 0.5rem 0 0; color: var(--danger); font-size: 0.85rem; }
     .composer-submit { background: var(--ink); color: var(--paper); border: none; padding: 0.45rem 1.1rem; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
     .composer-submit:disabled { opacity: 0.4; cursor: not-allowed; }
     .composer-submit:not(:disabled):hover { opacity: 0.85; }
@@ -230,6 +268,10 @@ else
     private List<SeriesCard> _series = new();
     private List<CreatorPostItem> _posts = new();
     private string _draftPost = string.Empty;
+    private string? _draftImageUrl;
+    private bool _draftImageMature;
+    private string? _uploadError;
+    private int _fileInputKey;
 
     private bool HasAnySocialLink => _creator is not null && (
         !string.IsNullOrEmpty(_creator.InstagramUrl) ||
@@ -285,6 +327,7 @@ else
                 p.Id,
                 p.Content,
                 p.ImageUrl,
+                p.ImageIsMature,
                 p.CreatedAt,
                 LikeCount = p.Likes.Count,
                 IsLikedByMe = currentUserId != null && p.Likes.Any(l => l.UserId == currentUserId),
@@ -330,6 +373,7 @@ else
                 Id = p.Id,
                 Content = p.Content,
                 ImageUrl = p.ImageUrl,
+                ImageIsMature = p.ImageIsMature,
                 CreatedAt = p.CreatedAt,
                 LikeCount = p.LikeCount,
                 IsLikedByMe = p.IsLikedByMe,
@@ -380,7 +424,13 @@ else
 
         await using var db = await DbFactory.CreateDbContextAsync();
 
-        var post = new CreatorPost { CreatorId = _currentUserId, Content = content };
+        var post = new CreatorPost
+        {
+            CreatorId = _currentUserId,
+            Content = content,
+            ImageUrl = _draftImageUrl,
+            ImageIsMature = _draftImageUrl is not null && _draftImageMature
+        };
         db.CreatorPosts.Add(post);
         await db.SaveChangesAsync();
 
@@ -388,6 +438,8 @@ else
         {
             Id = post.Id,
             Content = content,
+            ImageUrl = post.ImageUrl,
+            ImageIsMature = post.ImageIsMature,
             CreatedAt = post.CreatedAt,
             LikeCount = 0,
             IsLikedByMe = false,
@@ -395,6 +447,49 @@ else
         });
 
         _draftPost = string.Empty;
+
+        // The image now belongs to the post, so only the draft's reference is cleared (the file stays).
+        _draftImageUrl = null;
+        _draftImageMature = false;
+        _uploadError = null;
+        _fileInputKey++;
+    }
+
+    private async Task OnPostImageSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+
+        var problem = PostImages.Check(file);
+        if (problem is not null)
+        {
+            _uploadError = problem;
+            _fileInputKey++;
+            return;
+        }
+
+        try
+        {
+            var url = await PostImages.SaveAsync(Env, file);
+
+            // Picked a different image before posting? Remove the one that's being replaced.
+            PostImages.Delete(Env, _draftImageUrl);
+
+            _draftImageUrl = url;
+            _uploadError = null;
+        }
+        catch (Exception)
+        {
+            _uploadError = "That image failed to upload. Please try again.";
+        }
+    }
+
+    private void RemoveDraftImage()
+    {
+        PostImages.Delete(Env, _draftImageUrl);
+        _draftImageUrl = null;
+        _draftImageMature = false;
+        _uploadError = null;
+        _fileInputKey++;
     }
 
     private void RemovePost(CreatorPostItem post)

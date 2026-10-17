@@ -56,9 +56,19 @@
             </div>
 
             <div class="info">
-                @if (_series.Genres.Count > 0)
+                @if (_series.MainGenre is not null || _series.Genres.Count > 0)
                 {
-                    <div class="genres">@string.Join(" · ", _series.Genres.Select(g => g.Name))</div>
+                    var otherGenres = OtherGenreNames(_series);
+                    <div class="genres">
+                        @if (_series.MainGenre is not null)
+                        {
+                            <span class="main-genre" title="Main genre">@_series.MainGenre.Name</span>
+                        }
+                        @if (otherGenres.Count > 0)
+                        {
+                            <span class="other-genres">@string.Join(" · ", otherGenres)</span>
+                        }
+                    </div>
                 }
                 <h1>@_series.Title</h1>
                 <p class="byline">
@@ -180,7 +190,8 @@
         background: repeating-linear-gradient(135deg, var(--paper), var(--paper) 10px, var(--hatch) 10px, var(--hatch) 11px); }
 
     .info { flex: 1; min-width: 260px; display: flex; flex-direction: column; }
-    .genres { font-size: 0.8rem; font-weight: 600; color: var(--muted-text); text-transform: uppercase; letter-spacing: 0.04em; }
+    .genres { font-size: 0.8rem; font-weight: 600; color: var(--muted-text); text-transform: uppercase; letter-spacing: 0.04em; display: flex; align-items: center; flex-wrap: wrap; gap: 0.2rem 0.6rem; }
+    .main-genre { color: var(--ink); border: 1.5px solid var(--ink); padding: 0.05rem 0.45rem; }
     .info h1 { font-family: 'Fraunces', serif; font-weight: 900; font-size: clamp(1.75rem, 4vw, 2.5rem); line-height: 1.1; margin: 0.25rem 0 0.5rem; }
     .byline { font-family: 'Fraunces', serif; font-style: italic; margin: 0 0 1rem; display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
     .creator-avatar { width: 24px; height: 24px; object-fit: cover; border: 1.5px solid var(--ink); background: var(--paper); }
@@ -256,6 +267,10 @@
 
     private Series? _series;
     private AgeRating? _blockedRating;
+
+    // The main genre is shown on its own, so the plain list leaves it out.
+    private static List<string> OtherGenreNames(Series series) =>
+        series.Genres.Where(g => g.Id != series.MainGenreId).Select(g => g.Name).OrderBy(n => n).ToList();
     private List<ChapterRow> _chapters = new();
     private bool _loaded;
     private bool _newestFirst = true;
@@ -282,6 +297,7 @@
         _series = await Db.Series
             .Include(s => s.Creator)
             .Include(s => s.Genres)
+            .Include(s => s.MainGenre)
             .Include(s => s.Tags)
             .FirstOrDefaultAsync(s => s.Id == SeriesId);
 
