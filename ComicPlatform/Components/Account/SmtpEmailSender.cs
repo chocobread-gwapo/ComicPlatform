@@ -22,13 +22,22 @@ public class EmailSettings
 }
 
 /// <summary>
+/// Sends the 6-digit code used by the step-by-step sign-up. Unlike Identity's emails, the
+/// caller needs to know whether it was sent, so this returns false on failure.
+/// </summary>
+public interface IVerificationCodeSender
+{
+    Task<bool> SendVerificationCodeAsync(string email, string code);
+}
+
+/// <summary>
 /// Sends Identity's confirmation and password-reset emails over SMTP. This replaces
 /// IdentityNoOpEmailSender. Gmail always sends from the authenticated account, so
 /// the From address is the Gmail address in settings. Switching to Resend or Brevo
 /// later means changing this one class and the settings.
 /// </summary>
 internal sealed class SmtpEmailSender(IOptions<EmailSettings> options, ILogger<SmtpEmailSender> logger)
-    : IEmailSender<ApplicationUser>
+    : IEmailSender<ApplicationUser>, IVerificationCodeSender
 {
     private readonly EmailSettings settings = options.Value;
 
@@ -46,14 +55,20 @@ internal sealed class SmtpEmailSender(IOptions<EmailSettings> options, ILogger<S
         SendAsync(email, "Reset your Catkoom password",
             $"Reset your password using this code: {resetCode}");
 
-    private async Task SendAsync(string toEmail, string subject, string htmlMessage)
+    public Task<bool> SendVerificationCodeAsync(string email, string code) =>
+        SendAsync(email, "Your Catkoom verification code",
+            $"Your Catkoom verification code is <strong>{code}</strong>. It expires in 15 minutes. " +
+            "If you didn't try to sign up, you can ignore this email.");
+
+    // True if the message was handed to the mail server.
+    private async Task<bool> SendAsync(string toEmail, string subject, string htmlMessage)
     {
         if (string.IsNullOrWhiteSpace(settings.User) || string.IsNullOrWhiteSpace(settings.Password))
         {
             logger.LogWarning(
                 "Email is not configured (Email:User / Email:Password), so \"{Subject}\" to {Email} was not sent.",
                 subject, toEmail);
-            return;
+            return false;
         }
 
         try
@@ -74,12 +89,14 @@ internal sealed class SmtpEmailSender(IOptions<EmailSettings> options, ILogger<S
             };
 
             await client.SendMailAsync(message);
+            return true;
         }
         catch (Exception ex)
         {
             // Logged rather than thrown so a mail problem doesn't turn a finished
             // registration into a 500 page. Check the console output if emails don't arrive.
             logger.LogError(ex, "Failed to send \"{Subject}\" to {Email}.", subject, toEmail);
+            return false;
         }
     }
 }

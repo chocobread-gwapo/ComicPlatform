@@ -1,158 +1,573 @@
-﻿@page "/Account/Register"
+@page "/Account/Register"
 
 @using System.ComponentModel.DataAnnotations
+@using System.Security.Cryptography
 @using System.Text
-@using System.Text.Encodings.Web
 @using Microsoft.AspNetCore.Identity
-@using Microsoft.AspNetCore.WebUtilities
 @using Microsoft.EntityFrameworkCore
 @using ComicPlatform.Data
+@using ComicPlatform.Models
 
+@inject ApplicationDbContext Db
 @inject UserManager<ApplicationUser> UserManager
-@inject IUserStore<ApplicationUser> UserStore
 @inject SignInManager<ApplicationUser> SignInManager
-@inject IEmailSender<ApplicationUser> EmailSender
+@inject IVerificationCodeSender CodeSender
 @inject ILogger<Register> Logger
 @inject NavigationManager NavigationManager
 @inject IdentityRedirectManager RedirectManager
 
-<PageTitle>Register</PageTitle>
+<PageTitle>Sign up</PageTitle>
 
-<AuthCard Title="Create your account" Subtitle="Join Catkoom to follow series and publish your own.">
-    <ExternalLoginPicker />
+@* One page, one step at a time. The steps are server-side: where you are comes from the
+   saved SignupAttempt, not from the page, so refreshing or going back never loses your place. *@
+@switch (_step)
+{
+    case Step.Birthday:
+        <AuthCard Title="Create your account" Subtitle="First, when's your birthday?">
+            <StatusMessage Message="@Message" />
 
-    <div class="auth-divider"><span>or sign up with email</span></div>
+            @if (_ageBlocked)
+            {
+                <p class="auth-error">Catkoom is for people @AgeGate.MinimumSignupAge and older.</p>
+            }
+            else
+            {
+                <EditForm Model="BirthdayInput" method="post" OnValidSubmit="SubmitBirthday" FormName="birthday" class="auth-fields">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary class="auth-error" role="alert" />
+                    <div class="auth-field">
+                        <label for="BirthdayInput.BirthDate">Date of birth</label>
+                        <InputDate TValue="DateTime?" @bind-Value="BirthdayInput.BirthDate" id="BirthdayInput.BirthDate" class="auth-input" autocomplete="bday" max="@DateTime.UtcNow.ToString("yyyy-MM-dd")" />
+                        <ValidationMessage For="() => BirthdayInput.BirthDate" class="auth-error" />
+                    </div>
+                    <p class="auth-hint">
+                        We use your date of birth to confirm you're eligible and to show you series that suit your
+                        age. It isn't shown on your profile.
+                    </p>
+                    <button type="submit" class="auth-btn auth-primary">Next</button>
+                </EditForm>
 
-    <StatusMessage Message="@Message" />
+                <div class="auth-divider"><span>or sign up with</span></div>
+                <ExternalLoginPicker />
+            }
 
-    <EditForm Model="Input" method="post" OnValidSubmit="RegisterUser" FormName="register" class="auth-fields">
-        <DataAnnotationsValidator />
-        <ValidationSummary class="auth-error" role="alert" />
-        <div class="auth-field">
-            <label for="Input.DisplayName">Username</label>
-            <InputText @bind-Value="Input.DisplayName" id="Input.DisplayName" class="auth-input" autocomplete="nickname" aria-required="true" placeholder="Username" />
-            <ValidationMessage For="() => Input.DisplayName" class="auth-error" />
-        </div>
-        <div class="auth-field">
-            <label for="Input.Email">Email</label>
-            <InputText @bind-Value="Input.Email" id="Input.Email" class="auth-input" autocomplete="username" aria-required="true" placeholder="name@example.com" />
-            <ValidationMessage For="() => Input.Email" class="auth-error" />
-        </div>
-        <div class="auth-field">
-            <label for="Input.Password">Password</label>
-            <InputText type="password" @bind-Value="Input.Password" id="Input.Password" class="auth-input" autocomplete="new-password" aria-required="true" placeholder="password" />
-            <ValidationMessage For="() => Input.Password" class="auth-error" />
-        </div>
-        <div class="auth-field">
-            <label for="Input.ConfirmPassword">Confirm password</label>
-            <InputText type="password" @bind-Value="Input.ConfirmPassword" id="Input.ConfirmPassword" class="auth-input" autocomplete="new-password" aria-required="true" placeholder="password" />
-            <ValidationMessage For="() => Input.ConfirmPassword" class="auth-error" />
-        </div>
-        <button type="submit" class="auth-btn auth-primary">Create account</button>
-    </EditForm>
+            <div class="auth-links">
+                <span>Already have an account? <a href="@LoginUrl">Log in</a></span>
+            </div>
+        </AuthCard>
+        break;
 
-    <div class="auth-links">
-        <span>Already have an account? <a href="@(NavigationManager.GetUriWithQueryParameters("Account/Login", new Dictionary<string, object?> { ["ReturnUrl"] = ReturnUrl }))">Log in</a></span>
-    </div>
-</AuthCard>
+    case Step.Email:
+        <AuthCard Title="What's your email?" Subtitle="We'll send you a code to confirm it.">
+            <StatusMessage Message="@Message" />
+
+            <EditForm Model="EmailInput" method="post" OnValidSubmit="SubmitEmail" FormName="email" class="auth-fields">
+                <DataAnnotationsValidator />
+                <ValidationSummary class="auth-error" role="alert" />
+                <div class="auth-field">
+                    <label for="EmailInput.Email">Email</label>
+                    <InputText @bind-Value="EmailInput.Email" id="EmailInput.Email" class="auth-input" autocomplete="email" aria-required="true" placeholder="name@example.com" />
+                    <ValidationMessage For="() => EmailInput.Email" class="auth-error" />
+                </div>
+                <p class="auth-hint">
+                    We use your email to set up and manage your account and to send you sign-in emails, like
+                    password resets.
+                </p>
+                <button type="submit" class="auth-btn auth-primary">Next</button>
+            </EditForm>
+        </AuthCard>
+        break;
+
+    case Step.Code:
+        <AuthCard Title="Check your email" Subtitle="@CodeSubtitle">
+            <StatusMessage Message="@Message" />
+
+            <EditForm Model="CodeInput" method="post" OnValidSubmit="SubmitCode" FormName="code" class="auth-fields">
+                <DataAnnotationsValidator />
+                <ValidationSummary class="auth-error" role="alert" />
+                <div class="auth-field">
+                    <label for="CodeInput.Code">6-digit code</label>
+                    <InputText @bind-Value="CodeInput.Code" id="CodeInput.Code" class="auth-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" />
+                    <ValidationMessage For="() => CodeInput.Code" class="auth-error" />
+                </div>
+                <button type="submit" class="auth-btn auth-primary">Next</button>
+            </EditForm>
+
+            <form method="post" @onsubmit="ResendCode" @formname="resend" class="auth-stack">
+                <AntiforgeryToken />
+                <button type="submit" class="auth-btn">Send a new code</button>
+            </form>
+
+            <div class="auth-links">
+                <a href="@ChangeEmailUrl">Use a different email</a>
+            </div>
+        </AuthCard>
+        break;
+
+    case Step.Username:
+        <AuthCard Title="Choose a username" Subtitle="This is the name other readers will see.">
+            <StatusMessage Message="@Message" />
+
+            <EditForm Model="UsernameInput" method="post" OnValidSubmit="SubmitUsername" FormName="username" class="auth-fields">
+                <DataAnnotationsValidator />
+                <ValidationSummary class="auth-error" role="alert" />
+                <div class="auth-field">
+                    <label for="UsernameInput.DisplayName">Username</label>
+                    <InputText @bind-Value="UsernameInput.DisplayName" id="UsernameInput.DisplayName" class="auth-input" autocomplete="nickname" aria-required="true" maxlength="30" placeholder="Username" />
+                    <ValidationMessage For="() => UsernameInput.DisplayName" class="auth-error" />
+                </div>
+                <button type="submit" class="auth-btn auth-primary">Next</button>
+            </EditForm>
+        </AuthCard>
+        break;
+
+    case Step.Password:
+        <AuthCard Title="You're almost there!" Subtitle="Set up your password to finish.">
+            <StatusMessage Message="@Message" />
+
+            <EditForm Model="PasswordInput" method="post" OnValidSubmit="SubmitPassword" FormName="password" class="auth-fields">
+                <DataAnnotationsValidator />
+                <ValidationSummary class="auth-error" role="alert" />
+                <div class="auth-field">
+                    <label for="PasswordInput.Password">Password</label>
+                    <InputText type="password" @bind-Value="PasswordInput.Password" id="PasswordInput.Password" class="auth-input" autocomplete="new-password" aria-required="true" placeholder="Create password" />
+                    <ValidationMessage For="() => PasswordInput.Password" class="auth-error" />
+                </div>
+                <div class="auth-field">
+                    <label for="PasswordInput.ConfirmPassword">Confirm password</label>
+                    <InputText type="password" @bind-Value="PasswordInput.ConfirmPassword" id="PasswordInput.ConfirmPassword" class="auth-input" autocomplete="new-password" aria-required="true" placeholder="Confirm password" />
+                    <ValidationMessage For="() => PasswordInput.ConfirmPassword" class="auth-error" />
+                </div>
+                <p class="auth-hint">
+                    By tapping "Agree and sign up", you agree to the
+                    <a href="/terms" target="_blank" rel="noopener">Terms of Use</a> and acknowledge reading the
+                    <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>.
+                </p>
+                <button type="submit" class="auth-btn auth-primary">Agree and sign up</button>
+            </EditForm>
+        </AuthCard>
+        break;
+}
 
 @code {
-    private IEnumerable<IdentityError>? identityErrors;
+    private enum Step { Birthday, Email, Code, Username, Password }
 
-    [SupplyParameterFromForm]
-    private InputModel Input { get; set; } = default!;
+    private const int CodeLifetimeMinutes = 15;
+    private const int MaxWrongCodes = 5;
+    private const int MaxSendsPerAttempt = 5;
+    private const int MaxSendsPerEmailPerHour = 5;
+    private static readonly TimeSpan ResendCooldown = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan AttemptLifetime = TimeSpan.FromHours(1);
+
+    // Set when someone enters a birthday under the minimum age, so going back and typing a
+    // different date doesn't get them through. It only lasts a day.
+    private const string AgeBlockCookie = "catkoom_age_block";
+
+    private Step _step;
+    private SignupAttempt? _attempt;
+    private bool _ageBlocked;
+    private string? _error;
+    private string? _notice;
+
+    private string? Message => _error is not null ? $"Error: {_error}" : _notice;
+
+    private string CodeSubtitle => $"We sent a 6-digit code to {_attempt?.Email}.";
+
+    private string LoginUrl => NavigationManager.GetUriWithQueryParameters(
+        "Account/Login", new Dictionary<string, object?> { ["ReturnUrl"] = ReturnUrl });
+
+    private string ChangeEmailUrl => NavigationManager.GetUriWithQueryParameters(
+        "Account/Register",
+        new Dictionary<string, object?> { ["attempt"] = _attempt?.Id, ["step"] = "email", ["ReturnUrl"] = ReturnUrl });
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromQuery]
+    private Guid? Attempt { get; set; }
 
     [SupplyParameterFromQuery]
     private string? ReturnUrl { get; set; }
 
-    private string? Message => identityErrors is null ? null : $"Error: {string.Join(", ", identityErrors.Select(error => error.Description))}";
+    [SupplyParameterFromQuery(Name = "step")]
+    private string? StepOverride { get; set; }
 
-    protected override void OnInitialized()
+    [SupplyParameterFromForm(FormName = "birthday")]
+    private BirthdayModel BirthdayInput { get; set; } = default!;
+
+    [SupplyParameterFromForm(FormName = "email")]
+    private EmailModel EmailInput { get; set; } = default!;
+
+    [SupplyParameterFromForm(FormName = "code")]
+    private CodeModel CodeInput { get; set; } = default!;
+
+    [SupplyParameterFromForm(FormName = "username")]
+    private UsernameModel UsernameInput { get; set; } = default!;
+
+    [SupplyParameterFromForm(FormName = "password")]
+    private PasswordModel PasswordInput { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
     {
-        Input ??= new();
+        BirthdayInput ??= new();
+        EmailInput ??= new();
+        CodeInput ??= new();
+        UsernameInput ??= new();
+        PasswordInput ??= new();
+
+        _ageBlocked = HttpContext.Request.Cookies.ContainsKey(AgeBlockCookie);
+
+        if (Attempt is Guid id)
+        {
+            _attempt = await Db.SignupAttempts.FirstOrDefaultAsync(a => a.Id == id);
+
+            if (_attempt is not null && _attempt.CreatedAt < DateTime.UtcNow - AttemptLifetime)
+            {
+                Db.SignupAttempts.Remove(_attempt);
+                await Db.SaveChangesAsync();
+                _attempt = null;
+            }
+
+            if (_attempt is null)
+            {
+                _error = "Your sign-up session expired. Please start again.";
+            }
+        }
+
+        // The step always comes from what's saved, so a refresh lands on the same step.
+        _step = _attempt switch
+        {
+            null => Step.Birthday,
+            { Email: null } => Step.Email,
+            { EmailVerified: false } when StepOverride == "email" => Step.Email,
+            { EmailVerified: false } => Step.Code,
+            { DisplayName: null } => Step.Username,
+            _ => Step.Password
+        };
+
+        // Coming back to change the email: show what was typed before.
+        if (_step == Step.Email && HttpMethods.IsGet(HttpContext.Request.Method)
+            && string.IsNullOrEmpty(EmailInput.Email) && _attempt?.Email is string previousEmail)
+        {
+            EmailInput.Email = previousEmail;
+        }
     }
 
-    public async Task RegisterUser(EditContext editContext)
+    private void GoTo(Guid attemptId) =>
+        RedirectManager.RedirectTo(
+            "Account/Register",
+            new Dictionary<string, object?> { ["attempt"] = attemptId, ["ReturnUrl"] = ReturnUrl });
+
+    // ---- Step 1: birthday ----
+
+    private async Task SubmitBirthday()
     {
-        if (await UserManager.Users.AnyAsync(u => u.DisplayName == Input.DisplayName))
+        if (_ageBlocked)
         {
-            identityErrors = new[] { new IdentityError { Description = "That username is already taken." } };
             return;
         }
 
-        var user = CreateUser();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var birthDate = DateOnly.FromDateTime(BirthdayInput.BirthDate!.Value);
 
-        user.DisplayName = Input.DisplayName.Trim();
+        if (birthDate > today)
+        {
+            _error = "That date is in the future.";
+            return;
+        }
 
-        await UserStore.SetUserNameAsync(user, Input.Email, CancellationToken.None);
-        var emailStore = GetEmailStore();
-        await emailStore.SetEmailAsync(user, Input.Email, CancellationToken.None);
-        var result = await UserManager.CreateAsync(user, Input.Password);
+        var age = AgeGate.AgeOn(birthDate, today);
+
+        if (age > 120)
+        {
+            _error = "Please check your date of birth.";
+            return;
+        }
+
+        if (age < AgeGate.MinimumSignupAge)
+        {
+            HttpContext.Response.Cookies.Append(AgeBlockCookie, "1", new CookieOptions
+            {
+                Expires = DateTimeOffset.UtcNow.AddDays(1),
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.Lax,
+                IsEssential = true
+            });
+            _ageBlocked = true;
+            return;
+        }
+
+        // Tidy up abandoned sign-ups while we're here.
+        var cutoff = DateTime.UtcNow - AttemptLifetime;
+        await Db.SignupAttempts.Where(a => a.CreatedAt < cutoff).ExecuteDeleteAsync();
+
+        var attempt = new SignupAttempt { BirthDate = birthDate };
+        Db.SignupAttempts.Add(attempt);
+        await Db.SaveChangesAsync();
+
+        GoTo(attempt.Id);
+    }
+
+    // ---- Step 2: email ----
+
+    private async Task SubmitEmail()
+    {
+        if (_attempt is null)
+        {
+            _error = "Your sign-up session expired. Please start again.";
+            return;
+        }
+
+        var email = EmailInput.Email.Trim();
+
+        if (await UserManager.FindByEmailAsync(email) is not null)
+        {
+            _error = "An account with this email already exists. Try logging in instead.";
+            return;
+        }
+
+        // Same email, code sent a moment ago: just carry on to the code step instead of sending another.
+        if (!_attempt.EmailVerified
+            && string.Equals(_attempt.Email, email, StringComparison.OrdinalIgnoreCase)
+            && _attempt.CodeSentAt > DateTime.UtcNow - ResendCooldown)
+        {
+            GoTo(_attempt.Id);
+            return;
+        }
+
+        if (await TrySendCode(_attempt, email))
+        {
+            GoTo(_attempt.Id);
+        }
+    }
+
+    // Generates a fresh code, saves only its hash, and emails it. Returns false (with _error set) if it can't.
+    private async Task<bool> TrySendCode(SignupAttempt attempt, string email)
+    {
+        var now = DateTime.UtcNow;
+
+        if (attempt.CodeSendCount >= MaxSendsPerAttempt)
+        {
+            _error = "Too many codes have been requested. Please try again later.";
+            return false;
+        }
+
+        var hourAgo = now.AddHours(-1);
+        var sentToThisEmail = await Db.SignupAttempts
+            .Where(a => a.Email == email && a.CodeSentAt > hourAgo)
+            .SumAsync(a => a.CodeSendCount);
+
+        if (sentToThisEmail >= MaxSendsPerEmailPerHour)
+        {
+            _error = "Too many codes have been sent to this email. Please try again later.";
+            return false;
+        }
+
+        var code = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
+
+        attempt.Email = email;
+        attempt.CodeHash = Hash(attempt.Id, code);
+        attempt.CodeSentAt = now;
+        attempt.CodeExpiresAt = now.AddMinutes(CodeLifetimeMinutes);
+        attempt.CodeSendCount++;
+        attempt.CodeAttempts = 0;
+        attempt.EmailVerified = false;
+        await Db.SaveChangesAsync();
+
+        if (!await CodeSender.SendVerificationCodeAsync(email, code))
+        {
+            // Don't leave them on a code step for an email that never arrived.
+            attempt.Email = null;
+            attempt.CodeHash = null;
+            await Db.SaveChangesAsync();
+
+            _error = "We couldn't send the email. Please check the address and try again.";
+            return false;
+        }
+
+        return true;
+    }
+
+    // ---- Step 3: the code ----
+
+    private async Task SubmitCode()
+    {
+        if (_attempt?.Email is null || _attempt.CodeHash is null)
+        {
+            _error = "Please request a new code.";
+            return;
+        }
+
+        if (_attempt.CodeExpiresAt is null || _attempt.CodeExpiresAt < DateTime.UtcNow)
+        {
+            _error = "That code has expired. Please send a new one.";
+            return;
+        }
+
+        if (_attempt.CodeAttempts >= MaxWrongCodes)
+        {
+            _error = "Too many wrong tries. Please send a new code.";
+            return;
+        }
+
+        var entered = (CodeInput.Code ?? string.Empty).Trim();
+        var matches = CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(Hash(_attempt.Id, entered)),
+            Encoding.UTF8.GetBytes(_attempt.CodeHash));
+
+        if (!matches)
+        {
+            _attempt.CodeAttempts++;
+            await Db.SaveChangesAsync();
+
+            var left = MaxWrongCodes - _attempt.CodeAttempts;
+            _error = left > 0
+                ? $"That code isn't right. You have {left} {(left == 1 ? "try" : "tries")} left."
+                : "Too many wrong tries. Please send a new code.";
+            return;
+        }
+
+        _attempt.EmailVerified = true;
+        _attempt.CodeHash = null;
+        _attempt.CodeExpiresAt = null;
+        await Db.SaveChangesAsync();
+
+        GoTo(_attempt.Id);
+    }
+
+    private async Task ResendCode()
+    {
+        if (_attempt?.Email is not string email || _attempt.EmailVerified)
+        {
+            return;
+        }
+
+        if (_attempt.CodeSentAt > DateTime.UtcNow - ResendCooldown)
+        {
+            _error = "Please wait a minute before asking for another code.";
+            return;
+        }
+
+        if (await TrySendCode(_attempt, email))
+        {
+            _notice = "We sent you a new code.";
+        }
+    }
+
+    // ---- Step 4: username ----
+
+    private async Task SubmitUsername()
+    {
+        if (_attempt is null || !_attempt.EmailVerified)
+        {
+            return;
+        }
+
+        var name = UsernameInput.DisplayName.Trim();
+
+        if (await UserManager.Users.AnyAsync(u => u.DisplayName == name))
+        {
+            _error = "That username is already taken.";
+            return;
+        }
+
+        _attempt.DisplayName = name;
+        await Db.SaveChangesAsync();
+
+        GoTo(_attempt.Id);
+    }
+
+    // ---- Step 5: password, then the account is created ----
+
+    private async Task SubmitPassword()
+    {
+        if (_attempt is not { EmailVerified: true, Email: not null, DisplayName: not null })
+        {
+            return;
+        }
+
+        var email = _attempt.Email;
+        var displayName = _attempt.DisplayName;
+
+        // Re-checked here in case someone took the username or email while this sign-up was open.
+        if (await UserManager.Users.AnyAsync(u => u.DisplayName == displayName))
+        {
+            _attempt.DisplayName = null;
+            await Db.SaveChangesAsync();
+            GoTo(_attempt.Id);
+            return;
+        }
+
+        if (await UserManager.FindByEmailAsync(email) is not null)
+        {
+            _error = "An account with this email already exists. Try logging in instead.";
+            return;
+        }
+
+        // The email was verified with the code in step 3, so the account starts out confirmed
+        // and can be signed in straight away, no confirmation link needed.
+        var user = new ApplicationUser
+        {
+            UserName = email,
+            Email = email,
+            EmailConfirmed = true,
+            DisplayName = displayName,
+            BirthDate = _attempt.BirthDate
+        };
+
+        var result = await UserManager.CreateAsync(user, PasswordInput.Password);
 
         if (!result.Succeeded)
         {
-            identityErrors = result.Errors;
+            _error = string.Join(" ", result.Errors.Select(error => error.Description));
             return;
         }
 
         Logger.LogInformation("User created a new account with password.");
 
-        var userId = await UserManager.GetUserIdAsync(user);
-        var code = await UserManager.GenerateEmailConfirmationTokenAsync(user);
-        code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(code));
-        var callbackUrl = NavigationManager.GetUriWithQueryParameters(
-            NavigationManager.ToAbsoluteUri("Account/ConfirmEmail").AbsoluteUri,
-            new Dictionary<string, object?> { ["userId"] = userId, ["code"] = code, ["returnUrl"] = ReturnUrl });
+        Db.SignupAttempts.Remove(_attempt);
+        await Db.SaveChangesAsync();
 
-        await EmailSender.SendConfirmationLinkAsync(user, Input.Email, HtmlEncoder.Default.Encode(callbackUrl));
-
-        if (UserManager.Options.SignIn.RequireConfirmedAccount)
-        {
-            RedirectManager.RedirectTo(
-                "Account/RegisterConfirmation",
-                new() { ["email"] = Input.Email, ["returnUrl"] = ReturnUrl });
-        }
-        else
-        {
-            await SignInManager.SignInAsync(user, isPersistent: false);
-            RedirectManager.RedirectTo(ReturnUrl);
-        }
+        await SignInManager.SignInAsync(user, isPersistent: false);
+        RedirectManager.RedirectTo(ReturnUrl);
     }
 
-    private ApplicationUser CreateUser()
+    private static string Hash(Guid attemptId, string code) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{attemptId:N}:{code}")));
+
+    private sealed class BirthdayModel
     {
-        try
-        {
-            return Activator.CreateInstance<ApplicationUser>();
-        }
-        catch
-        {
-            throw new InvalidOperationException($"Can't create an instance of '{nameof(ApplicationUser)}'. " +
-                $"Ensure that '{nameof(ApplicationUser)}' is not an abstract class and has a parameterless constructor.");
-        }
+        [Required(ErrorMessage = "Please enter your date of birth.")]
+        [Display(Name = "Date of birth")]
+        public DateTime? BirthDate { get; set; }
     }
 
-    private IUserEmailStore<ApplicationUser> GetEmailStore()
+    private sealed class EmailModel
     {
-        if (!UserManager.SupportsUserEmail)
-        {
-            throw new NotSupportedException("The default UI requires a user store with email support.");
-        }
-        return (IUserEmailStore<ApplicationUser>)UserStore;
+        [Required]
+        [EmailAddress]
+        [Display(Name = "Email")]
+        public string Email { get; set; } = "";
     }
 
-    private sealed class InputModel
+    private sealed class CodeModel
+    {
+        [Required(ErrorMessage = "Please enter the code.")]
+        [StringLength(6, MinimumLength = 6, ErrorMessage = "The code is 6 digits.")]
+        public string Code { get; set; } = "";
+    }
+
+    private sealed class UsernameModel
     {
         [Required]
         [StringLength(30, ErrorMessage = "The {0} must be at least {2} and at max {1} characters long.", MinimumLength = 2)]
         [Display(Name = "Username")]
         public string DisplayName { get; set; } = "";
+    }
 
-        [Required]
-        [EmailAddress]
-        [Display(Name = "Email")]
-        public string Email { get; set; } = "";
-
+    private sealed class PasswordModel
+    {
         [Required]
         [StringLength(100, ErrorMessage = "The {0} must be at least {2} and at max {1} characters long.", MinimumLength = 6)]
         [DataType(DataType.Password)]

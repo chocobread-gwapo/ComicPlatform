@@ -25,6 +25,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Like> Likes { get; set; }
     public DbSet<SeriesAuthor> SeriesAuthors { get; set; }
     public DbSet<Report> Reports { get; set; }
+    public DbSet<SignupAttempt> SignupAttempts { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -39,6 +40,10 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         builder.Entity<Tag>()
             .HasIndex(t => t.Name)
             .IsUnique();
+
+        // Looked up when counting how many codes were sent to one address.
+        builder.Entity<SignupAttempt>()
+            .HasIndex(a => a.Email);
 
         builder.Entity<Series>()
             .HasOne(s => s.MainGenre)

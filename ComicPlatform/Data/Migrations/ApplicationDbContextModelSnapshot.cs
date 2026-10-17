@@ -508,6 +508,52 @@ namespace ComicPlatform.Migrations
                     b.ToTable("SeriesAuthors");
                 });
 
+            modelBuilder.Entity("ComicPlatform.Models.SignupAttempt", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("BirthDate")
+                        .HasColumnType("date");
+
+                    b.Property<int>("CodeAttempts")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CodeExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CodeHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("CodeSendCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CodeSentAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DisplayName")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<bool>("EmailVerified")
+                        .HasColumnType("bit");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Email");
+
+                    b.ToTable("SignupAttempts");
+                });
+
             modelBuilder.Entity("ComicPlatform.Models.Tag", b =>
                 {
                     b.Property<int>("Id")

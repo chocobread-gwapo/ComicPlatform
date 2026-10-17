@@ -316,3 +316,37 @@ public class Report
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public ReportStatus Status { get; set; } = ReportStatus.Pending;
 }
+
+/// <summary>
+/// One in-progress sign-up on the step-by-step Register page. The Guid in the page address
+/// is the only key, and the row is deleted when the account is created or an hour after it
+/// started. The password is never stored here, and the emailed code is stored only as a hash.
+/// </summary>
+public class SignupAttempt
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    public DateOnly BirthDate { get; set; }
+
+    [MaxLength(256)]
+    public string? Email { get; set; }
+
+    [MaxLength(64)]
+    public string? CodeHash { get; set; }
+
+    public DateTime? CodeSentAt { get; set; }
+    public DateTime? CodeExpiresAt { get; set; }
+
+    // Sends so far, kept across email changes so one sign-up can't be used to mail lots of addresses.
+    public int CodeSendCount { get; set; }
+
+    // Wrong guesses at the current code.
+    public int CodeAttempts { get; set; }
+
+    public bool EmailVerified { get; set; }
+
+    [MaxLength(30)]
+    public string? DisplayName { get; set; }
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}

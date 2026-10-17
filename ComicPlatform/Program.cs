@@ -80,6 +80,7 @@ builder.Services.AddScoped<IUserClaimsPrincipalFactory<ApplicationUser>, CustomU
 // come from User Secrets, section "Email". See SmtpEmailSender.cs.
 builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("Email"));
 builder.Services.AddTransient<IEmailSender<ApplicationUser>, SmtpEmailSender>();
+builder.Services.AddTransient<IVerificationCodeSender, SmtpEmailSender>();
 
 builder.Services.Configure<Microsoft.AspNetCore.SignalR.HubOptions>(options =>
 {
