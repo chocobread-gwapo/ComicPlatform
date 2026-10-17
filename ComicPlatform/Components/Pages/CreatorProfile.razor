@@ -256,7 +256,11 @@ else
             return;
         }
 
-        _seriesCount = await db.Series.CountAsync(s => s.CreatorId == CreatorId);
+        // Visitors only see the series they're old enough for; creators see all of their own.
+        var maxRating = AgeGate.MaxRatingFor(authState.User);
+        var isOwn = _isOwnProfile;
+
+        _seriesCount = await db.Series.CountAsync(s => s.CreatorId == CreatorId && (isOwn || s.Rating <= maxRating));
         _followerCount = await db.CreatorFollows.CountAsync(cf => cf.CreatorId == CreatorId);
 
         if (_currentUserId is not null && !_isOwnProfile)
@@ -266,7 +270,7 @@ else
         }
 
         _series = await db.Series
-            .Where(s => s.CreatorId == CreatorId)
+            .Where(s => s.CreatorId == CreatorId && (isOwn || s.Rating <= maxRating))
             .OrderByDescending(s => s.UpdatedAt)
             .Select(s => new SeriesCard(s.Id, s.Title, s.CoverImageUrl))
             .ToListAsync();

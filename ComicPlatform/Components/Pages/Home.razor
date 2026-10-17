@@ -1,9 +1,11 @@
 @page "/"
+@using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Components.Web
 @using Microsoft.EntityFrameworkCore
 @using ComicPlatform.Data
 @using ComicPlatform.Models
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject AuthenticationStateProvider AuthProvider
 
 <PageTitle>Catkoom — Read something new</PageTitle>
 
@@ -239,10 +241,16 @@
     {
         var now = DateTime.UtcNow;
 
+        // Everything on this page (ranked rows, categories, daily, search) is built from
+        // this one query, so filtering by age rating here covers all of it.
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        var maxRating = AgeGate.MaxRatingFor(authState.User);
+
         await using var db = await DbFactory.CreateDbContextAsync();
 
         var rows = await db.Series
             .Where(s => s.Chapters.Any(c => !c.IsDraft && c.PublishedAt <= now))
+            .Where(s => s.Rating <= maxRating)
             .Select(s => new
             {
                 s.Id,

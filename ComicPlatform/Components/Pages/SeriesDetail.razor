@@ -22,6 +22,19 @@
     {
         <p class="loading">Loading...</p>
     }
+    else if (_blockedRating is AgeRating blocked)
+    {
+        <div class="loading">
+            @if (_currentUserId is null)
+            {
+                <p>This series is rated @blocked.Label(). <a href="/Account/Login">Log in</a> to read it if you're old enough.</p>
+            }
+            else
+            {
+                <p>This series is rated @blocked.Label() and isn't available for your age.</p>
+            }
+        </div>
+    }
     else if (_series is null)
     {
         <p class="loading">That series doesn't exist.</p>
@@ -242,6 +255,7 @@
     private sealed record ChapterRow(int Id, int Number, string Title, DateTime? PublishedAt, string? Thumb, int Likes);
 
     private Series? _series;
+    private AgeRating? _blockedRating;
     private List<ChapterRow> _chapters = new();
     private bool _loaded;
     private bool _newestFirst = true;
@@ -263,12 +277,27 @@
     {
         var authState = await AuthProvider.GetAuthenticationStateAsync();
         _currentUserId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        _blockedRating = null;
 
         _series = await Db.Series
             .Include(s => s.Creator)
             .Include(s => s.Genres)
             .Include(s => s.Tags)
             .FirstOrDefaultAsync(s => s.Id == SeriesId);
+
+        // Age gate: the series' creator and co-authors can always open it; everyone else
+        // needs to be old enough (admins count as old enough, see AgeGate).
+        if (_series is not null && _series.Rating > AgeGate.MaxRatingFor(authState.User))
+        {
+            var isOwner = _currentUserId is not null && (_series.CreatorId == _currentUserId ||
+                await Db.SeriesAuthors.AnyAsync(sa => sa.SeriesId == SeriesId && sa.UserId == _currentUserId));
+
+            if (!isOwner)
+            {
+                _blockedRating = _series.Rating;
+                _series = null;
+            }
+        }
 
         if (_series is not null)
         {

@@ -19,7 +19,20 @@
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 </HeadContent>
 
-@if (_chapter is null)
+@if (_blockedRating is AgeRating blocked)
+{
+    <div class="loading">
+        @if (_currentUserId is null)
+        {
+            <p>This series is rated @blocked.Label(). <a href="/Account/Login">Log in</a> to read it if you're old enough.</p>
+        }
+        else
+        {
+            <p>This series is rated @blocked.Label() and isn't available for your age.</p>
+        }
+    </div>
+}
+else if (_chapter is null)
 {
     <p class="loading">Loading...</p>
 }
@@ -251,6 +264,7 @@ else
     private int _likeCount;
     private bool _hasLiked;
     private int? _lastScrolledChapter;
+    private AgeRating? _blockedRating;
 
     private static string Compact(int n) => n >= 1_000_000 ? $"{n / 1_000_000.0:0.#}M"
         : n >= 1_000 ? $"{n / 1_000.0:0.#}K"
@@ -261,6 +275,7 @@ else
     protected override async Task OnParametersSetAsync()
     {
         _showEpisodeList = false;
+        _blockedRating = null;
 
         var authState = await AuthProvider.GetAuthenticationStateAsync();
         _currentUserId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -269,6 +284,20 @@ else
             .Include(c => c.Series)
             .Include(c => c.Pages)
             .FirstOrDefaultAsync(c => c.SeriesId == SeriesId && c.Number == ChapterNumber && !c.IsDraft && c.PublishedAt <= DateTime.UtcNow);
+
+        // Age gate, checked before anything else (including the view count): the series'
+        // creator and co-authors can always read it; everyone else needs to be old enough.
+        if (_chapter is not null && _chapter.Series.Rating > AgeGate.MaxRatingFor(authState.User))
+        {
+            var isOwner = _currentUserId is not null && (_chapter.Series.CreatorId == _currentUserId ||
+                await Db.SeriesAuthors.AnyAsync(sa => sa.SeriesId == SeriesId && sa.UserId == _currentUserId));
+
+            if (!isOwner)
+            {
+                _blockedRating = _chapter.Series.Rating;
+                _chapter = null;
+            }
+        }
 
         if (_chapter is not null)
         {

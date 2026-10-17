@@ -1,9 +1,11 @@
 @page "/categories"
+@using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.EntityFrameworkCore
 @using ComicPlatform.Data
 @using ComicPlatform.Models
 @inject ApplicationDbContext Db
 @inject NavigationManager Nav
+@inject AuthenticationStateProvider AuthProvider
 
 <PageTitle>Categories - Catkoom</PageTitle>
 
@@ -159,6 +161,7 @@
     private bool _sortByNewest;
     private bool _loaded;
     private string? _activeTag;
+    private AgeRating _maxRating = AgeRating.Age13;
 
     private IEnumerable<Card> Sorted => _sortByNewest
         ? _items.OrderByDescending(i => i.FirstPublished)
@@ -170,6 +173,9 @@
 
     protected override async Task OnInitializedAsync()
     {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        _maxRating = AgeGate.MaxRatingFor(authState.User);
+
         _genres = await Db.Genres.OrderBy(g => g.Name).Select(g => g.Name).ToListAsync();
         _genresLoaded = true;
     }
@@ -225,7 +231,11 @@
         var now = DateTime.UtcNow;
         var selected = _selectedGenres.ToList();
 
-        var query = Db.Series.Where(s => s.Chapters.Any(c => !c.IsDraft && c.PublishedAt <= now));
+        var maxRating = _maxRating;
+
+        var query = Db.Series
+            .Where(s => s.Chapters.Any(c => !c.IsDraft && c.PublishedAt <= now))
+            .Where(s => s.Rating <= maxRating);
 
         query = _matchAll
             ? query.Where(s => s.Genres.Count(g => selected.Contains(g.Name)) == selected.Count)
@@ -252,9 +262,11 @@
 
         var now = DateTime.UtcNow;
         var lowerTag = tagName.ToLower();
+        var maxRating = _maxRating;
 
         var rows = await Db.Series
             .Where(s => s.Chapters.Any(c => !c.IsDraft && c.PublishedAt <= now))
+            .Where(s => s.Rating <= maxRating)
             .Where(s => s.Tags.Any(t => t.Name.ToLower() == lowerTag))
             .Select(s => new
             {

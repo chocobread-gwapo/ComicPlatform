@@ -106,6 +106,9 @@
 
         await using var db = await DbFactory.CreateDbContextAsync();
 
+        // The series count only includes series this viewer may see.
+        var maxRating = AgeGate.MaxRatingFor(authState.User);
+
         var rows = await db.CreatorFollows
             .Where(cf => cf.UserId == _userId)
             .OrderByDescending(cf => cf.FollowedAt)
@@ -114,7 +117,7 @@
                 cf.Creator.Id,
                 cf.Creator.DisplayName,
                 cf.Creator.AvatarUrl,
-                SeriesCount = db.Series.Count(s => s.CreatorId == cf.CreatorId),
+                SeriesCount = db.Series.Count(s => s.CreatorId == cf.CreatorId && s.Rating <= maxRating),
                 FollowerCount = db.CreatorFollows.Count(x => x.CreatorId == cf.CreatorId)
             })
             .ToListAsync();

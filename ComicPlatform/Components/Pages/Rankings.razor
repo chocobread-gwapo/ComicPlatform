@@ -1,8 +1,10 @@
 @page "/rankings"
+@using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.EntityFrameworkCore
 @using ComicPlatform.Data
 @using ComicPlatform.Models
 @inject ApplicationDbContext Db
+@inject AuthenticationStateProvider AuthProvider
 
 <PageTitle>Rankings - Catkoom</PageTitle>
 
@@ -114,8 +116,12 @@
     {
         var now = DateTime.UtcNow;
 
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        var maxRating = AgeGate.MaxRatingFor(authState.User);
+
         var rows = await Db.Series
             .Where(s => s.Chapters.Any(c => !c.IsDraft && c.PublishedAt <= now))
+            .Where(s => s.Rating <= maxRating)
             .Select(s => new
             {
                 s.Id,

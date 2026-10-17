@@ -151,10 +151,13 @@
 
         await using var db = await DbFactory.CreateDbContextAsync();
 
+        var maxRating = AgeGate.MaxRatingFor(authState.User);
+
         var follows = await db.Follows
             .Include(f => f.Series).ThenInclude(s => s.Chapters)
             .Include(f => f.Series).ThenInclude(s => s.Creator)
             .Where(f => f.UserId == _userId)
+            .Where(f => f.Series.Rating <= maxRating)
             .ToListAsync();
 
         _items = follows.Select(f =>
