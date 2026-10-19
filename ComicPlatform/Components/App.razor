@@ -25,6 +25,22 @@
         // has to flip the attribute — CSS below reacts to data-theme directly,
         // so there's no separate visual state to keep in sync.
 
+        // A random id kept in a cookie, so a logged-out reader's repeat views of the same
+        // chapter on the same day are counted once. It isn't tied to any account.
+        window.getVisitorId = function () {
+            var match = document.cookie.match(/(?:^|; )visitor=([^;]+)/);
+            if (match) {
+                return match[1];
+            }
+
+            var id = (window.crypto && window.crypto.randomUUID)
+                ? window.crypto.randomUUID()
+                : Date.now().toString(16) + Math.random().toString(16).slice(2);
+
+            document.cookie = 'visitor=' + id + ';path=/;max-age=31536000;samesite=lax';
+            return id;
+        };
+
         window.toggleTheme = function () {
             var current = document.documentElement.getAttribute('data-theme') || 'light';
             window.setTheme(current === 'dark' ? 'light' : 'dark');

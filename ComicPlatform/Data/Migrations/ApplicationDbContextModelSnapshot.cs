@@ -159,6 +159,41 @@ namespace ComicPlatform.Migrations
                     b.ToTable("Chapters");
                 });
 
+            modelBuilder.Entity("ComicPlatform.Models.ChapterDailyView", b =>
+                {
+                    b.Property<int>("ChapterId")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly>("Day")
+                        .HasColumnType("date");
+
+                    b.Property<int>("Views")
+                        .HasColumnType("int");
+
+                    b.HasKey("ChapterId", "Day");
+
+                    b.HasIndex("Day");
+
+                    b.ToTable("ChapterDailyViews");
+                });
+
+            modelBuilder.Entity("ComicPlatform.Models.ChapterViewMark", b =>
+                {
+                    b.Property<int>("ChapterId")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly>("Day")
+                        .HasColumnType("date");
+
+                    b.Property<string>("VisitorKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("ChapterId", "Day", "VisitorKey");
+
+                    b.ToTable("ChapterViewMarks");
+                });
+
             modelBuilder.Entity("ComicPlatform.Models.Comment", b =>
                 {
                     b.Property<int>("Id")
@@ -443,6 +478,92 @@ namespace ComicPlatform.Migrations
                     b.HasIndex("SeriesId");
 
                     b.ToTable("Reports");
+                });
+
+            modelBuilder.Entity("ComicPlatform.Models.RevenueLine", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime?>("PaidAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("RevenuePeriodId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<long>("Views")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("RevenuePeriodId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("RevenueLines");
+                });
+
+            modelBuilder.Entity("ComicPlatform.Models.RevenuePeriod", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("ClosedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ClosedByUserId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal>("CreatorPool")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("CreatorSharePercent")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)");
+
+                    b.Property<int>("Month")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("TotalRevenue")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<long>("TotalViews")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Year")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Year", "Month")
+                        .IsUnique();
+
+                    b.ToTable("RevenuePeriods");
                 });
 
             modelBuilder.Entity("ComicPlatform.Models.Series", b =>
@@ -773,6 +894,17 @@ namespace ComicPlatform.Migrations
                     b.Navigation("Series");
                 });
 
+            modelBuilder.Entity("ComicPlatform.Models.ChapterDailyView", b =>
+                {
+                    b.HasOne("ComicPlatform.Models.Chapter", "Chapter")
+                        .WithMany()
+                        .HasForeignKey("ChapterId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Chapter");
+                });
+
             modelBuilder.Entity("ComicPlatform.Models.Comment", b =>
                 {
                     b.HasOne("ComicPlatform.Models.Chapter", "Chapter")
@@ -969,6 +1101,25 @@ namespace ComicPlatform.Migrations
                     b.Navigation("Series");
                 });
 
+            modelBuilder.Entity("ComicPlatform.Models.RevenueLine", b =>
+                {
+                    b.HasOne("ComicPlatform.Models.RevenuePeriod", "RevenuePeriod")
+                        .WithMany("Lines")
+                        .HasForeignKey("RevenuePeriodId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ComicPlatform.Data.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("RevenuePeriod");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("ComicPlatform.Models.Series", b =>
                 {
                     b.HasOne("ComicPlatform.Data.ApplicationUser", "Creator")
@@ -1160,6 +1311,11 @@ namespace ComicPlatform.Migrations
             modelBuilder.Entity("ComicPlatform.Models.CreatorPostComment", b =>
                 {
                     b.Navigation("Replies");
+                });
+
+            modelBuilder.Entity("ComicPlatform.Models.RevenuePeriod", b =>
+                {
+                    b.Navigation("Lines");
                 });
 
             modelBuilder.Entity("ComicPlatform.Models.Series", b =>

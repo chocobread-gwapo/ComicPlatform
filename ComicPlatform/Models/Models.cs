@@ -354,3 +354,81 @@ public class SignupAttempt
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
+
+/// <summary>
+/// How many times a chapter was opened on one day (UTC). Chapter.ViewCount is only a lifetime
+/// total with no dates, so this is what makes "views in October" answerable. Composite key (ChapterId, Day).
+/// </summary>
+public class ChapterDailyView
+{
+    public int ChapterId { get; set; }
+    public Chapter Chapter { get; set; } = null!;
+
+    public DateOnly Day { get; set; }
+    public int Views { get; set; }
+}
+
+public enum RevenueLineStatus { Owed, Paid }
+
+/// <summary>
+/// One closed month of ad revenue. Once it exists it's final: the revenue, the creators' share and
+/// every creator's amount are fixed, and a month can only be closed once.
+/// </summary>
+public class RevenuePeriod
+{
+    public int Id { get; set; }
+
+    public int Year { get; set; }
+    public int Month { get; set; }
+
+    // What the site actually received for the month, and the percentage handed to creators.
+    public decimal TotalRevenue { get; set; }
+    public decimal CreatorSharePercent { get; set; }
+
+    // TotalRevenue * CreatorSharePercent / 100, rounded down to the cent. This is what gets divided up.
+    public decimal CreatorPool { get; set; }
+
+    // Every creator's views added together, the number each person's share is measured against.
+    public long TotalViews { get; set; }
+
+    [MaxLength(3)]
+    public string Currency { get; set; } = "USD";
+
+    public DateTime ClosedAt { get; set; } = DateTime.UtcNow;
+    public string? ClosedByUserId { get; set; }
+
+    public ICollection<RevenueLine> Lines { get; set; } = new List<RevenueLine>();
+}
+
+/// <summary>What one creator earned in one closed month, and whether it has been paid out yet.</summary>
+public class RevenueLine
+{
+    public int Id { get; set; }
+
+    public int RevenuePeriodId { get; set; }
+    public RevenuePeriod RevenuePeriod { get; set; } = null!;
+
+    public string UserId { get; set; } = string.Empty;
+    public ApplicationUser User { get; set; } = null!;
+
+    public long Views { get; set; }
+    public decimal Amount { get; set; }
+
+    public RevenueLineStatus Status { get; set; } = RevenueLineStatus.Owed;
+    public DateTime? PaidAt { get; set; }
+}
+
+/// <summary>
+/// "This visitor has already been counted for this chapter today." The visitor is the signed-in
+/// user ("u:" and their id) or, for logged-out readers, a random id kept in a cookie ("v:" and the id).
+/// Composite key (ChapterId, Day, VisitorKey), so adding the same one twice fails, and that failure is
+/// how a repeat view is spotted. Rows from before today are deleted, since only today's matter.
+/// </summary>
+public class ChapterViewMark
+{
+    public int ChapterId { get; set; }
+    public DateOnly Day { get; set; }
+
+    [MaxLength(64)]
+    public string VisitorKey { get; set; } = string.Empty;
+}

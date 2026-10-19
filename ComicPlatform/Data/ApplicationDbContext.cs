@@ -26,6 +26,10 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<SeriesAuthor> SeriesAuthors { get; set; }
     public DbSet<Report> Reports { get; set; }
     public DbSet<SignupAttempt> SignupAttempts { get; set; }
+    public DbSet<ChapterDailyView> ChapterDailyViews { get; set; }
+    public DbSet<ChapterViewMark> ChapterViewMarks { get; set; }
+    public DbSet<RevenuePeriod> RevenuePeriods { get; set; }
+    public DbSet<RevenueLine> RevenueLines { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -44,6 +48,37 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         // Looked up when counting how many codes were sent to one address.
         builder.Entity<SignupAttempt>()
             .HasIndex(a => a.Email);
+
+        // Revenue ledger. Daily view counts are summed over a month when it's closed.
+        builder.Entity<ChapterDailyView>()
+            .HasKey(d => new { d.ChapterId, d.Day });
+
+        builder.Entity<ChapterDailyView>()
+            .HasIndex(d => d.Day);
+
+        // No relationship to Chapter on purpose: these rows are short-lived and cleaned up by date.
+        builder.Entity<ChapterViewMark>()
+            .HasKey(m => new { m.ChapterId, m.Day, m.VisitorKey });
+
+        builder.Entity<RevenuePeriod>().Property(p => p.TotalRevenue).HasPrecision(18, 2);
+        builder.Entity<RevenuePeriod>().Property(p => p.CreatorPool).HasPrecision(18, 2);
+        builder.Entity<RevenuePeriod>().Property(p => p.CreatorSharePercent).HasPrecision(5, 2);
+        builder.Entity<RevenueLine>().Property(l => l.Amount).HasPrecision(18, 2);
+
+        // A month can only be closed once, and a creator has one line per month.
+        builder.Entity<RevenuePeriod>()
+            .HasIndex(p => new { p.Year, p.Month })
+            .IsUnique();
+
+        builder.Entity<RevenueLine>()
+            .HasIndex(l => new { l.RevenuePeriodId, l.UserId })
+            .IsUnique();
+
+        builder.Entity<RevenueLine>()
+            .HasOne(l => l.User)
+            .WithMany()
+            .HasForeignKey(l => l.UserId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         builder.Entity<Series>()
             .HasOne(s => s.MainGenre)

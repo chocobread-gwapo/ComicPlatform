@@ -1,0 +1,455 @@
+@page "/admin/revenue"
+@attribute [Authorize(Roles = "Admin")]
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.EntityFrameworkCore
+@using System.Globalization
+@using System.Security.Claims
+@using ComicPlatform.Data
+@using ComicPlatform.Models
+@inject ApplicationDbContext Db
+@inject AuthenticationStateProvider AuthProvider
+
+<PageTitle>Revenue - Admin</PageTitle>
+
+<HeadContent>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+</HeadContent>
+
+<div class="admin">
+    <header class="admin-header">
+        <h1>Revenue</h1>
+        <a class="back-link" href="/admin">&laquo; Admin</a>
+    </header>
+
+    @if (_notice is not null)
+    {
+        <p class="notice" role="status">@_notice</p>
+    }
+
+    @if (_error is not null)
+    {
+        <p class="error" role="alert">@_error</p>
+    }
+
+    <section>
+        <h2>Close a month</h2>
+        <p class="help">
+            Enter what the site actually received in ad revenue for a finished month, and the percentage that goes
+            to creators. Each creator's amount is that share of the pool, in proportion to their views that month.
+            Preview it first. Closing a month is final.
+        </p>
+
+        <div class="form-row">
+            <label>
+                Month
+                <input type="month" placeholder="yyyy-MM" value="@_month" @onchange="OnMonthChanged" />
+            </label>
+            <label>
+                Ad revenue received (@Currency)
+                <input type="number" step="0.01" min="0" @bind="_revenue" />
+            </label>
+            <label>
+                Creators' share (%)
+                <input type="number" step="0.01" min="0" max="100" placeholder="e.g. 55" @bind="_sharePercent" />
+            </label>
+            <button type="button" class="btn" @onclick="PreviewMonth">Preview</button>
+        </div>
+
+        @if (_preview is not null)
+        {
+            <h3>@MonthName(_preview.Year, _preview.Month)</h3>
+            <p class="summary">
+                Revenue <strong>@Money(_preview.TotalRevenue)</strong> &middot;
+                creators' share <strong>@_preview.SharePercent.ToString("0.##")%</strong> &middot;
+                pool <strong>@Money(_preview.Pool)</strong> &middot;
+                @_preview.TotalViews.ToString("N0") views in total
+            </p>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr><th>Creator</th><th class="num">Views</th><th class="num">Share of views</th><th class="num">Amount</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var line in _preview.Lines)
+                        {
+                            <tr>
+                                <td>@line.DisplayName</td>
+                                <td class="num">@line.Views.ToString("N0")</td>
+                                <td class="num">@(((double)line.Views / _preview.TotalViews * 100d).ToString("0.##"))%</td>
+                                <td class="num">@Money(line.Amount)</td>
+                            </tr>
+                        }
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td>Paid out</td>
+                            <td class="num">@_preview.TotalViews.ToString("N0")</td>
+                            <td></td>
+                            <td class="num">@Money(_preview.Allocated)</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            @if (_preview.Pool > _preview.Allocated)
+            {
+                <p class="help">@Money(_preview.Pool - _preview.Allocated) is left over from rounding each amount down to the cent. It stays with the site.</p>
+            }
+
+            @if (_confirmingClose)
+            {
+                <span class="confirm">
+                    Close @MonthName(_preview.Year, _preview.Month) for good?
+                    <button type="button" class="confirm-yes" @onclick="CloseMonth">Yes, close it</button>
+                    <button type="button" class="confirm-no" @onclick="() => _confirmingClose = false">Cancel</button>
+                </span>
+            }
+            else
+            {
+                <button type="button" class="btn primary" @onclick="() => _confirmingClose = true">Close this month</button>
+            }
+        }
+    </section>
+
+    <section>
+        <h2>Payouts</h2>
+        <p class="help">
+            What each creator is owed from closed months. Marking someone paid only records that you've sent the
+            money. It doesn't send anything. Balances under @Money(MinimumPayout) wait until they reach it.
+        </p>
+
+        @if (_payouts.Count == 0)
+        {
+            <p class="empty">Nothing is owed right now.</p>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr><th>Creator</th><th class="num">Months</th><th class="num">Owed</th><th>Payout account</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var p in _payouts)
+                        {
+                            <tr>
+                                <td>@p.Name</td>
+                                <td class="num">@p.Months</td>
+                                <td class="num">@Money(p.Owed)</td>
+                                <td>@(p.StripeReady ? "Ready" : "Not set up")</td>
+                                <td class="actions">
+                                    @if (p.Owed < MinimumPayout)
+                                    {
+                                        <span class="muted">Below minimum</span>
+                                    }
+                                    else if (_confirmingPayUserId == p.UserId)
+                                    {
+                                        <span class="confirm">
+                                            You've sent @Money(p.Owed)?
+                                            <button type="button" class="confirm-yes" @onclick="() => MarkPaid(p.UserId)">Yes</button>
+                                            <button type="button" class="confirm-no" @onclick="() => _confirmingPayUserId = null">Cancel</button>
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="btn" @onclick="() => _confirmingPayUserId = p.UserId">Mark paid</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
+    <section>
+        <h2>Closed months</h2>
+
+        @if (_periods.Count == 0)
+        {
+            <p class="empty">No months have been closed yet.</p>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr><th>Month</th><th class="num">Revenue</th><th class="num">Creator pool</th><th class="num">Views</th><th class="num">Creators</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var p in _periods)
+                        {
+                            <tr>
+                                <td>@MonthName(p.Year, p.Month)</td>
+                                <td class="num">@Money(p.TotalRevenue)</td>
+                                <td class="num">@Money(p.CreatorPool)</td>
+                                <td class="num">@p.TotalViews.ToString("N0")</td>
+                                <td class="num">@p.Creators</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+</div>
+
+<style>
+    .admin { font-family: 'Public Sans', sans-serif; background: var(--paper); color: var(--ink); min-height: 100vh; padding: 2.5rem 2rem 4rem; }
+    .admin > * { max-width: 1000px; margin-left: auto; margin-right: auto; }
+
+    .admin-header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 3px solid var(--ink); }
+    .admin-header h1 { font-family: 'Fraunces', serif; font-weight: 900; font-size: clamp(1.75rem, 4vw, 2.5rem); margin: 0; }
+    .back-link { color: var(--accent); font-weight: 600; font-size: 0.9rem; text-decoration: none; }
+    .back-link:hover { text-decoration: underline; }
+
+    section { margin-bottom: 2.5rem; }
+    h2 { font-family: 'Fraunces', serif; font-weight: 600; font-size: 1.4rem; margin: 0 0 0.5rem; }
+    h3 { font-family: 'Fraunces', serif; font-weight: 600; font-size: 1.1rem; margin: 1.5rem 0 0.25rem; }
+
+    .help { margin: 0 0 1rem; max-width: 65ch; color: var(--muted-text); font-size: 0.9rem; line-height: 1.5; }
+    .summary { margin: 0 0 1rem; font-size: 0.95rem; }
+    .empty { color: var(--muted-text); }
+    .muted { color: var(--muted-text); font-size: 0.85rem; }
+
+    .notice { border: 1.5px solid var(--accent); padding: 0.6rem 1rem; margin-bottom: 1rem; }
+    .error { border: 1.5px solid var(--danger); color: var(--danger); padding: 0.6rem 1rem; margin-bottom: 1rem; }
+
+    .form-row { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem; }
+    .form-row label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8rem; font-weight: 600; }
+    .form-row input { font: inherit; padding: 0.5rem 0.6rem; min-width: 10rem; color: var(--ink); background: var(--panel-bg); border: 1.5px solid var(--ink); }
+    .form-row input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+
+    .btn { font: inherit; font-size: 0.85rem; font-weight: 600; padding: 0.45rem 0.9rem; cursor: pointer; border: 1.5px solid var(--ink); background: transparent; color: var(--ink); }
+    .btn:hover { background: var(--panel-bg); }
+    .btn.primary { background: var(--ink); color: var(--paper); }
+    .btn.primary:hover { background: var(--accent); border-color: var(--accent); }
+    .btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+    .confirm { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; font-weight: 600; color: var(--danger); }
+    .confirm-yes, .confirm-no { border: 1.5px solid var(--ink); background: var(--panel-bg); color: var(--ink); padding: 0.2rem 0.55rem; font-size: 0.8rem; cursor: pointer; }
+    .confirm-yes { border-color: var(--danger); color: var(--danger); }
+
+    .table-wrap { overflow-x: auto; margin-bottom: 1rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th, td { text-align: left; padding: 0.55rem 0.75rem; border-bottom: 1.5px solid var(--ink); }
+    thead th { border-top: 3px solid var(--ink); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    tfoot td { font-weight: 700; border-bottom: 3px solid var(--ink); }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .actions { text-align: right; white-space: nowrap; }
+</style>
+
+@code {
+    private const string Currency = "USD";
+
+    // A creator's balance has to reach this before it can be marked paid. Change it here.
+    private const decimal MinimumPayout = 10m;
+
+    private sealed record PeriodRow(int Id, int Year, int Month, decimal TotalRevenue, decimal CreatorPool, long TotalViews, int Creators);
+    private sealed record PayoutRow(string UserId, string Name, decimal Owed, int Months, bool StripeReady);
+
+    private string _month = string.Empty;
+    private decimal? _revenue;
+    private decimal? _sharePercent;
+    private RevenuePreview? _preview;
+    private bool _confirmingClose;
+    private string? _confirmingPayUserId;
+    private string? _error;
+    private string? _notice;
+    private List<PeriodRow> _periods = new();
+    private List<PayoutRow> _payouts = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Finished months only, so the month just gone is the usual one to close.
+        _month = DateTime.UtcNow.AddMonths(-1).ToString("yyyy-MM", CultureInfo.InvariantCulture);
+        await Reload();
+    }
+
+    private async Task Reload()
+    {
+        _periods = await Db.RevenuePeriods
+            .OrderByDescending(p => p.Year)
+            .ThenByDescending(p => p.Month)
+            .Select(p => new PeriodRow(p.Id, p.Year, p.Month, p.TotalRevenue, p.CreatorPool, p.TotalViews, p.Lines.Count))
+            .ToListAsync();
+
+        var owed = await Db.RevenueLines
+            .Where(l => l.Status == RevenueLineStatus.Owed)
+            .GroupBy(l => l.UserId)
+            .Select(g => new { UserId = g.Key, Total = g.Sum(l => l.Amount), Months = g.Count() })
+            .ToListAsync();
+
+        var ids = owed.Select(o => o.UserId).ToList();
+        var users = await Db.Users
+            .Where(u => ids.Contains(u.Id))
+            .Select(u => new { u.Id, u.DisplayName, u.StripeOnboardingComplete })
+            .ToListAsync();
+
+        _payouts = owed
+            .Select(o =>
+            {
+                var user = users.FirstOrDefault(u => u.Id == o.UserId);
+                return new PayoutRow(o.UserId, user?.DisplayName ?? "(unknown)", o.Total, o.Months, user?.StripeOnboardingComplete ?? false);
+            })
+            .OrderByDescending(p => p.Owed)
+            .ToList();
+    }
+
+    // Not @bind: Blazor treats a month input as a date type and won't bind it to a string.
+    private void OnMonthChanged(ChangeEventArgs e) => _month = e.Value?.ToString() ?? string.Empty;
+
+    private static string Money(decimal amount) => $"{amount.ToString("N2", CultureInfo.InvariantCulture)} {Currency}";
+
+    private static string MonthName(int year, int month) =>
+        new DateTime(year, month, 1).ToString("MMMM yyyy", CultureInfo.InvariantCulture);
+
+    private bool TryParseMonth(out int year, out int month)
+    {
+        year = month = 0;
+
+        if (DateTime.TryParseExact(_month + "-01", "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
+        {
+            year = date.Year;
+            month = date.Month;
+            return true;
+        }
+
+        return false;
+    }
+
+    private async Task PreviewMonth()
+    {
+        _error = null;
+        _notice = null;
+        _preview = null;
+        _confirmingClose = false;
+
+        if (!TryParseMonth(out var year, out var month))
+        {
+            _error = "Pick a month.";
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        if (new DateOnly(year, month, 1) >= new DateOnly(now.Year, now.Month, 1))
+        {
+            _error = "Only finished months can be closed.";
+            return;
+        }
+
+        if (await Db.RevenuePeriods.AnyAsync(p => p.Year == year && p.Month == month))
+        {
+            _error = $"{MonthName(year, month)} is already closed.";
+            return;
+        }
+
+        if (_revenue is null or <= 0m)
+        {
+            _error = "Enter the ad revenue received for that month.";
+            return;
+        }
+
+        if (_sharePercent is null or < 0m or > 100m)
+        {
+            _error = "Enter the creators' share as a percentage between 0 and 100.";
+            return;
+        }
+
+        var views = await RevenueCalculator.ViewsByCreatorAsync(Db, year, month);
+        if (views.Count == 0)
+        {
+            _error = $"No views were recorded in {MonthName(year, month)}.";
+            return;
+        }
+
+        _preview = RevenueCalculator.Build(year, month, _revenue.Value, _sharePercent.Value, views);
+    }
+
+    private async Task CloseMonth()
+    {
+        if (_preview is null)
+        {
+            return;
+        }
+
+        var p = _preview;
+        _error = null;
+        _confirmingClose = false;
+
+        // Worked out again from the saved numbers rather than trusting the preview on screen.
+        var views = await RevenueCalculator.ViewsByCreatorAsync(Db, p.Year, p.Month);
+        var final = RevenueCalculator.Build(p.Year, p.Month, p.TotalRevenue, p.SharePercent, views);
+
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+
+        var period = new RevenuePeriod
+        {
+            Year = p.Year,
+            Month = p.Month,
+            TotalRevenue = p.TotalRevenue,
+            CreatorSharePercent = p.SharePercent,
+            CreatorPool = final.Pool,
+            TotalViews = final.TotalViews,
+            Currency = Currency,
+            ClosedAt = DateTime.UtcNow,
+            ClosedByUserId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier),
+            Lines = final.Lines
+                .Where(l => l.Amount > 0m)
+                .Select(l => new RevenueLine { UserId = l.UserId, Views = l.Views, Amount = l.Amount })
+                .ToList()
+        };
+
+        try
+        {
+            Db.RevenuePeriods.Add(period);
+            await Db.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            Db.ChangeTracker.Clear();
+            _error = $"{MonthName(p.Year, p.Month)} has just been closed already.";
+            _preview = null;
+            return;
+        }
+
+        _notice = $"{MonthName(p.Year, p.Month)} is closed. {period.Lines.Count} creator(s) earned a share of {Money(final.Pool)}.";
+        _preview = null;
+        await Reload();
+    }
+
+    private async Task MarkPaid(string userId)
+    {
+        _error = null;
+        _confirmingPayUserId = null;
+
+        var lines = await Db.RevenueLines
+            .Where(l => l.UserId == userId && l.Status == RevenueLineStatus.Owed)
+            .ToListAsync();
+
+        var total = lines.Sum(l => l.Amount);
+        if (total < MinimumPayout)
+        {
+            _error = $"That balance is below the {Money(MinimumPayout)} minimum.";
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        foreach (var line in lines)
+        {
+            line.Status = RevenueLineStatus.Paid;
+            line.PaidAt = now;
+        }
+
+        await Db.SaveChangesAsync();
+
+        _notice = $"Marked {Money(total)} as paid.";
+        await Reload();
+    }
+}

@@ -32,7 +32,7 @@
         {
             <div class="status ready">
                 <strong>You're set up.</strong>
-                <p>Your connected Stripe account can receive payouts. There's nothing to earn yet — ad revenue sharing isn't live on the site.</p>
+                <p>Your connected Stripe account can receive payouts. Your earnings from ad revenue sharing are listed below once a month is closed.</p>
             </div>
         }
         else if (!string.IsNullOrEmpty(_user.StripeConnectAccountId))
@@ -56,6 +56,40 @@
         {
             <p class="error">@_error</p>
         }
+
+        <h2>This month so far</h2>
+        <p class="month-views">
+            <strong>@_viewsThisMonth.ToString("N0")</strong> views on your series in @DateTime.UtcNow.ToString("MMMM yyyy").
+            What that earns is worked out when the month closes, from that month's ad revenue and everyone's views.
+        </p>
+
+        @if (_lines.Count > 0)
+        {
+            <h2>Closed months</h2>
+            <p class="totals">
+                Owed: <strong>@Money(_lines.Where(l => l.Status == ComicPlatform.Models.RevenueLineStatus.Owed).Sum(l => l.Amount))</strong>
+                &middot;
+                Paid so far: <strong>@Money(_lines.Where(l => l.Status == ComicPlatform.Models.RevenueLineStatus.Paid).Sum(l => l.Amount))</strong>
+            </p>
+            <div class="history-wrap">
+                <table class="history">
+                    <thead>
+                        <tr><th>Month</th><th class="num">Views</th><th class="num">Amount</th><th>Status</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var line in _lines)
+                        {
+                            <tr>
+                                <td>@(new DateTime(line.RevenuePeriod.Year, line.RevenuePeriod.Month, 1).ToString("MMM yyyy"))</td>
+                                <td class="num">@line.Views.ToString("N0")</td>
+                                <td class="num">@Money(line.Amount)</td>
+                                <td>@(line.Status == ComicPlatform.Models.RevenueLineStatus.Paid ? "Paid" : "Owed")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
     }
 </div>
 
@@ -73,6 +107,17 @@
     .connect-btn:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); }
     .connect-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
+    .earnings h2 { font-family: 'Fraunces', serif; font-weight: 600; font-size: 1.2rem; margin: 2rem 0 0.5rem; }
+    .month-views, .totals { margin: 0 0 1rem; font-size: 0.9rem; line-height: 1.5; }
+    .month-views { color: var(--muted-text); }
+    .month-views strong { color: var(--ink); font-size: 1.05rem; }
+
+    .history-wrap { overflow-x: auto; }
+    .history { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    .history th, .history td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1.5px solid var(--ink); }
+    .history thead th { border-top: 3px solid var(--ink); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    .history .num { text-align: right; font-variant-numeric: tabular-nums; }
+
     .error { color: var(--danger); font-size: 0.9rem; margin-top: 1rem; }
 </style>
 
@@ -84,12 +129,25 @@
     private bool _loaded;
     private bool _submitting;
     private string? _error;
+    private List<ComicPlatform.Models.RevenueLine> _lines = new();
+    private long _viewsThisMonth;
 
     protected override async Task OnInitializedAsync()
     {
         var authState = await AuthProvider.GetAuthenticationStateAsync();
         var userId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
         _user = await Db.Users.FindAsync(userId);
+
+        _lines = await Db.RevenueLines
+            .Include(l => l.RevenuePeriod)
+            .Where(l => l.UserId == userId)
+            .OrderByDescending(l => l.RevenuePeriod.Year)
+            .ThenByDescending(l => l.RevenuePeriod.Month)
+            .ToListAsync();
+
+        var now = DateTime.UtcNow;
+        var monthViews = await RevenueCalculator.ViewsByCreatorAsync(Db, now.Year, now.Month);
+        _viewsThisMonth = monthViews.FirstOrDefault(v => v.UserId == userId)?.Views ?? 0;
 
         if (_user is not null && StripeReturn && !string.IsNullOrEmpty(_user.StripeConnectAccountId))
         {
@@ -98,6 +156,9 @@
 
         _loaded = true;
     }
+
+    private static string Money(decimal amount) =>
+        $"{amount.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)} USD";
 
     private async Task RefreshAccountStatus()
     {

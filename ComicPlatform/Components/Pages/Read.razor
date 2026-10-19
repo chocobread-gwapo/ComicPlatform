@@ -8,8 +8,10 @@
 @using System.ComponentModel.DataAnnotations
 @using System.Security.Claims
 @inject ApplicationDbContext Db
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject AuthenticationStateProvider AuthProvider
 @inject IJSRuntime JS
+@inject ILogger<Read> Logger
 
 <PageTitle>@(_chapter?.Series.Title ?? "Loading") - Ch. @ChapterNumber</PageTitle>
 
@@ -264,6 +266,8 @@ else
     private int _likeCount;
     private bool _hasLiked;
     private int? _lastScrolledChapter;
+    private int? _viewCountedChapterId;
+    private string? _visitorKey;
     private AgeRating? _blockedRating;
 
     private static string Compact(int n) => n >= 1_000_000 ? $"{n / 1_000_000.0:0.#}M"
@@ -301,9 +305,6 @@ else
 
         if (_chapter is not null)
         {
-            _chapter.ViewCount++;
-            await Db.SaveChangesAsync();
-
             _canModerate = _currentUserId is not null && (
                 authState.User.IsInRole("Admin") ||
                 _chapter.Series.CreatorId == _currentUserId ||
@@ -336,6 +337,31 @@ else
         {
             _lastScrolledChapter = _chapter.Number;
             await JS.InvokeVoidAsync("window.scrollTo", 0, 0);
+        }
+
+        // The view is counted here, not in OnParametersSetAsync. That one runs twice on a first
+        // visit (once for the prerendered page, once on the live connection), which counted every
+        // visit double. OnAfterRenderAsync only runs on the live connection. Age-blocked visits
+        // have no chapter loaded, so they're never counted.
+        if (_chapter is not null && _viewCountedChapterId != _chapter.Id)
+        {
+            _viewCountedChapterId = _chapter.Id;
+
+            try
+            {
+                // One counted view per person per chapter per day: signed-in readers by account,
+                // logged-out readers by a random id kept in a cookie (see getVisitorId in App.razor).
+                _visitorKey ??= _currentUserId is not null
+                    ? $"u:{_currentUserId}"
+                    : $"v:{await JS.InvokeAsync<string>("getVisitorId")}";
+
+                await ViewCounter.RecordAsync(DbFactory, _chapter.Id, _visitorKey);
+            }
+            catch (Exception ex)
+            {
+                // Reading comes first, so a failure to count never breaks the page.
+                Logger.LogError(ex, "Couldn't count a view of chapter {ChapterId}.", _chapter.Id);
+            }
         }
     }
 
