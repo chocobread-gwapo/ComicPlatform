@@ -93,7 +93,7 @@
                 }
 
                 <label class="drop-zone">
-                    <InputFile OnChange="OnPageFilesSelected" multiple accept="image/*" />
+                    <InputFile OnChange="OnPageFilesSelected" multiple accept="image/png,image/jpeg,image/gif,image/webp" />
                     <span class="drop-label">+ Add Pages</span>
                     <span class="drop-hint">Drop images here or click to browse &middot; 30 MB max per image</span>
                 </label>
@@ -446,12 +446,18 @@
 
     private async Task DeletePage(Page pg)
     {
+        // When editing an existing chapter, the page is already saved in the database, so delete that row.
         if (IsEditMode)
         {
             Db.Pages.Remove(pg);
             await Db.SaveChangesAsync();
         }
 
+        // Delete the image file as well. Without this it would stay on the server with nothing using it.
+        // ImageUploads.Delete only touches files inside uploads/pages, so it can't remove anything else.
+        ImageUploads.Delete(Env, "pages", pg.ImageUrl);
+
+        // Take the page out of the list shown on screen.
         _pages.Remove(pg);
     }
 
@@ -476,36 +482,31 @@
 
     private async Task OnPageFilesSelected(InputFileChangeEventArgs e)
     {
+        // Clear any error messages left over from the previous upload.
         _uploadErrors.Clear();
 
-        var uploadsFolder = Path.Combine(Env.WebRootPath, "uploads", "pages");
-        Directory.CreateDirectory(uploadsFolder);
-
+        // New pages are numbered after the highest existing page number, or start at 1 for a new chapter.
         var nextPageNumber = _pages.Count == 0 ? 1 : _pages.Max(p => p.PageNumber) + 1;
 
+        // Up to 100 files can be picked at once. Each is handled on its own, so one bad file
+        // doesn't stop the others from uploading.
         foreach (var file in e.GetMultipleFiles(maximumFileCount: 100))
         {
-            if (file.Size > MaxFileSizeBytes)
-            {
-                _uploadErrors.Add($"{file.Name} is {file.Size / (1024.0 * 1024.0):F1} MB — the limit is 30 MB.");
-                continue;
-            }
-
             try
             {
-                var fileName = $"{Guid.NewGuid()}{Path.GetExtension(file.Name)}";
-                var filePath = Path.Combine(uploadsFolder, fileName);
-
-                await using var stream = file.OpenReadStream(maxAllowedSize: MaxFileSizeBytes);
-                await using var fileStream = new FileStream(filePath, FileMode.Create);
-                await stream.CopyToAsync(fileStream);
+                // ImageUploads checks the size limit and the file's real contents (its first bytes), ignores
+                // whatever name the file had, and saves it under a random name with a matching extension.
+                // That stops something like "x.html" from ending up as a web page on the site.
+                // It returns the address the page image can be loaded from.
+                var url = await ImageUploads.SaveAsync(Env, file, "pages", MaxFileSizeBytes);
 
                 var newPage = new Page
                 {
                     PageNumber = nextPageNumber,
-                    ImageUrl = $"/uploads/pages/{fileName}"
+                    ImageUrl = url
                 };
 
+                // When editing an existing chapter, save the page to the database right away.
                 if (IsEditMode && _chapter is not null)
                 {
                     newPage.ChapterId = _chapter.Id;
@@ -513,11 +514,18 @@
                     await Db.SaveChangesAsync();
                 }
 
+                // Show the new page in the list and move on to the next page number.
                 _pages.Add(newPage);
                 nextPageNumber++;
             }
+            catch (InvalidImageException ex)
+            {
+                // Not a real JPG, PNG, GIF or WebP, or over the size limit: say which file and why.
+                _uploadErrors.Add($"{file.Name}: {ex.Message}");
+            }
             catch (Exception)
             {
+                // Anything unexpected, such as a dropped connection.
                 _uploadErrors.Add($"{file.Name} failed to upload — try again.");
             }
         }

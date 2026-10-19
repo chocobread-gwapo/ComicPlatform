@@ -78,7 +78,7 @@
             {
                 <img class="cover-preview" src="@_newCoverUrl" alt="Cover preview" />
             }
-            <InputFile OnChange="OnCoverFileSelected" accept="image/*" />
+            <InputFile OnChange="OnCoverFileSelected" accept="image/png,image/jpeg,image/gif,image/webp" />
             @if (_uploadError is not null)
             {
                 <p class="upload-error">@_uploadError</p>
@@ -201,18 +201,19 @@
 
         try
         {
-            var uploadsFolder = Path.Combine(Env.WebRootPath, "uploads", "covers");
-            Directory.CreateDirectory(uploadsFolder);
+            // The file's real signature decides what it is, and it's saved under a random name with
+            // a matching extension. Whatever name the file had is ignored (see ImageUploads).
+            var url = await ImageUploads.SaveAsync(Env, file, "covers", MaxCoverSizeBytes);
 
-            var fileName = $"{Guid.NewGuid()}{Path.GetExtension(file.Name)}";
-            var filePath = Path.Combine(uploadsFolder, fileName);
+            // Picked a different cover before saving? Remove the one that's being replaced.
+            ImageUploads.Delete(Env, "covers", _newCoverUrl);
 
-            await using var stream = file.OpenReadStream(maxAllowedSize: MaxCoverSizeBytes);
-            await using var fileStream = new FileStream(filePath, FileMode.Create);
-            await stream.CopyToAsync(fileStream);
-
-            _newCoverUrl = $"/uploads/covers/{fileName}";
+            _newCoverUrl = url;
             _uploadError = null;
+        }
+        catch (InvalidImageException ex)
+        {
+            _uploadError = ex.Message;
         }
         catch (Exception)
         {

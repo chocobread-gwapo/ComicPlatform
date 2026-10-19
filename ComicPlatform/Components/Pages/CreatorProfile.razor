@@ -477,6 +477,11 @@ else
             _draftImageUrl = url;
             _uploadError = null;
         }
+        catch (InvalidImageException ex)
+        {
+            _uploadError = ex.Message;
+            _fileInputKey++;
+        }
         catch (Exception)
         {
             _uploadError = "That image failed to upload. Please try again.";

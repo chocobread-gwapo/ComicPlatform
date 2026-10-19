@@ -1,11 +1,13 @@
 @page "/admin"
 @attribute [Authorize(Roles = "Admin")]
 @using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Hosting
 @using Microsoft.AspNetCore.Components.Web
 @using Microsoft.EntityFrameworkCore
 @using ComicPlatform.Data
 @using ComicPlatform.Models
 @inject ApplicationDbContext Db
+@inject IWebHostEnvironment Env
 
 <PageTitle>Admin</PageTitle>
 
@@ -244,6 +246,10 @@
         var series = await Db.Series.FindAsync(seriesId);
         if (series is not null)
         {
+            // Note which image files belong to this series (cover and chapter pages) BEFORE deleting,
+            // because once the rows are gone there's no record of which files were theirs.
+            var files = await SeriesCleanup.CollectAsync(Db, seriesId);
+
             var directReports = await Db.Reports
                 .Where(r => r.SeriesId == seriesId)
                 .ToListAsync();
@@ -251,6 +257,9 @@
 
             Db.Series.Remove(series);
             await Db.SaveChangesAsync();
+
+            // Only now that the database delete has worked, delete the image files from disk.
+            SeriesCleanup.Delete(Env, files);
         }
 
         _all?.RemoveAll(s => s.Id == seriesId);
